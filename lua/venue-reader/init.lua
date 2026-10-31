@@ -1,11 +1,18 @@
 local M = {}
+
 local Server = require("venue-reader.server")
+local Summaries = require("venue-reader.summaries")
+
 local options
 local ready
 local generation = 0
 local lifetimes = {}
 local owner_marker = tostring(M)
-local defaults = { server = { auto_install = true }, settings = { fix = vim.empty_dict() } }
+local defaults = {
+  server = { auto_install = true },
+  settings = { fix = vim.empty_dict() },
+  summary = { mode = "front", highlight = "VenueReaderSummary" },
+}
 
 local function managed(client)
   return client.config.venue_reader_owner == owner_marker
@@ -79,7 +86,7 @@ function M.status(buffer)
       buffers = vim.tbl_keys(client.attached_buffers),
     },
     acquisition = Server.status(),
-    annotations = "native Neovim LSP",
+    annotations = Summaries.status(buffer, client and client.id),
     treesitter = "not managed",
   }
 end
@@ -96,6 +103,22 @@ function M.install()
   end, true)
 end
 
+function M.summary(mode)
+  local updated = vim.deepcopy(options)
+  updated.summary.mode = mode
+  updated.settings.fix.messageSummary.channels = nil
+  local changed = M.setup(updated)
+  if not changed then
+    for _, client in ipairs(vim.lsp.get_clients({ name = "venue_reader" })) do
+      if managed(client) then
+        for buffer in pairs(client.attached_buffers) do
+          Summaries.attach(client, buffer)
+        end
+      end
+    end
+  end
+end
+
 local function settings(value)
   local result = vim.deepcopy(value)
   if next(result.fix or {}) == nil then
@@ -107,7 +130,6 @@ end
 function M.setup(value)
   assert(vim.fn.has("nvim-0.12") == 1, "venue-reader requires Neovim >=0.12")
   value = value or {}
-  assert(value.summary == nil, "Custom summary modes are not implemented yet")
   local candidate = vim.tbl_deep_extend("force", vim.deepcopy(defaults), value)
   assert(type(candidate.server.auto_install) == "boolean", "server.auto_install must be boolean")
   if candidate.server.cmd then
@@ -119,7 +141,8 @@ function M.setup(value)
       assert(type(argument) == "string" and argument ~= "", "server.cmd arguments must be strings")
     end
   end
-  candidate.settings = settings(candidate.settings)
+  candidate.settings = settings(Summaries.settings(candidate.summary, candidate.settings))
+  local mode_changed = Summaries.configure(candidate.summary, managed)
   local changed = options and not vim.deep_equal(options.settings, candidate.settings)
   generation = generation + 1
   options = candidate
@@ -132,12 +155,25 @@ function M.setup(value)
       end
     end
   end
+  if mode_changed then
+    for _, client in ipairs(vim.lsp.get_clients({ name = "venue_reader" })) do
+      if managed(client) then
+        for buffer in pairs(client.attached_buffers) do
+          Summaries.attach(client, buffer)
+        end
+      end
+    end
+  end
   vim.filetype.add({ extension = { fix = "fix" } })
   vim.lsp.config.venue_reader = { -- luacheck: ignore 122
     venue_reader_owner = owner_marker,
     filetypes = { "fix" },
     settings = options.settings,
     exit_timeout = 1000,
+    handlers = { ["textDocument/inlayHint"] = Summaries.handler },
+    on_init = function(client)
+      vim.lsp.codelens.enable(options.summary.mode == "codelens", { client_id = client.id })
+    end,
     root_dir = function(buffer, on_dir)
       if not eligible(buffer) then
         if vim.api.nvim_buf_is_valid(buffer) and vim.bo[buffer].filetype == "fix" then
@@ -198,6 +234,8 @@ function M.setup(value)
     local action = command.fargs[1]
     if action == "status" then
       notify(vim.inspect(M.status()))
+    elseif action == "summary" then
+      M.summary(command.fargs[2])
     elseif action == "install" and command.fargs[2] == "server" then
       M.install()
     elseif action == "start" or action == "stop" or action == "restart" then
@@ -209,10 +247,21 @@ function M.setup(value)
     nargs = "+",
     force = true,
     complete = function()
-      return { "start", "stop", "restart", "status", "install server" }
+      return {
+        "start",
+        "stop",
+        "restart",
+        "status",
+        "install server",
+        "summary front",
+        "summary above",
+        "summary codelens",
+        "summary off",
+      }
     end,
   })
   vim.lsp.enable("venue_reader")
+  return mode_changed
 end
 
 return M

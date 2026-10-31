@@ -7,8 +7,8 @@ with Neovim's native LSP client without this plugin. Requires Neovim 0.12+.
 
 Server discovery, installation and LSP lifecycle are available. Native hover,
 diagnostics, code actions, links, selections and document symbols use Neovim's
-standard LSP interfaces. Custom annotations, decoded yank and optional grammar
-management are still TODO.
+standard LSP interfaces. Front/above summary rendering and native CodeLens are
+available. Decoded yank and optional grammar management are still TODO.
 
 ## Development
 
@@ -51,6 +51,7 @@ make test SUITE=transport
 make test SUITE=dependencies
 make test SUITE=lifecycle
 make test SUITE=installation
+make test SUITE=summaries
 ```
 
 `transport` and `dependencies` need no server binary; `make prepare-tests` prepares
@@ -117,7 +118,8 @@ require("venue-reader").setup({
     cmd = { "/absolute/path/to/venue-reader", "--stdio" },
     auto_install = false,
   },
-  settings = { fix = { limits = { rangeLines = 1000 } } },
+  summary = { mode = "front", highlight = "VenueReaderSummary" },
+  settings = { fix = {} },
 })
 ```
 
@@ -138,11 +140,13 @@ directory. Buffers in the same managed session share a client.
 - `:VenueReader stop` delegates to `:lsp stop venue_reader`.
 - `:VenueReader restart` resolves the executable, then delegates to native restart
   (or enable when no client is running).
+- `:VenueReader summary front|above|codelens|off` selects the session summary mode.
 - `:VenueReader status` shows session, binary, version, acquisition and failure state.
 - `:VenueReader install server` explicitly retries discovery/installation.
 - `:checkhealth venue-reader` reports version requirements and current state.
 
-Equivalent Lua functions are `start`, `stop`, `restart`, `status` and `install`.
+Equivalent Lua functions are `start`, `stop`, `restart`, `status`, `install` and
+`summary(mode)`.
 The helpers use native command scope: they target all clients named
 `venue_reader`, including different roots. Native restart preserves attached
 buffers. Stop terminates current clients; use `:lsp disable venue_reader` to
@@ -153,17 +157,66 @@ Other clients' diagnostics/providers are preserved. No default mappings are adde
 
 ## Summary modes
 
-Native inlay hints, semantic highlighting, CodeLens and refresh handlers remain
-under Neovim's control. For example, enable native hints for the current buffer:
+The server generates the same summary text/details for each channel; the mode
+changes placement and styling. One summary backend is active at a time.
 
-```lua
-vim.lsp.inlay_hint.enable(true, { bufnr = 0 })
+| Mode | Display | Styling and limits |
+| --- | --- | --- |
+| `front` (default) | Inline before the raw message | `VenueReaderSummary`; native inlay request range limit |
+| `above` | Virtual line above the raw message | Same content and custom highlight as front |
+| `codelens` | Native CodeLens above the message | Native `LspCodeLens` styling and document cap |
+| `off` | No summary | Native fields and other features remain available |
+
+```vim
+VenueReader summary above
+VenueReader summary codelens
+VenueReader summary off
 ```
 
-The plugin does not enable these features on the user's behalf. Native requests
-remain subject to the server's range and document limits on large logs.
+```lua
+require("venue-reader").summary("front")
+```
 
-TODO: Custom front/above placement and summary-mode helpers.
+Custom modes use one configurable summary highlight. Server label parts/padding
+are preserved, without inferred route or main/detail colours. Above separates
+summaries from raw fields but consumes vertical space; front shifts raw text
+horizontally. Neither changes buffer bytes or copied text. CodeLens uses Neovim's
+renderer; custom highlight/placement settings do not apply to it.
+
+Neovim sends requests and handles refresh, field hints and semantic highlighting.
+The plugin intercepts only its client's summary hints (`data.kind = "summary"`)
+and draws them with owned extmarks. It does not split ranges, raise limits, scan
+FIX messages or schedule viewport requests. Display metadata comes in the initial
+inlay response, with no per-message metadata requests.
+
+Selecting front/above enables native inlay hints on attached FIX buffers. This
+native gate is buffer-wide, so other clients' field hints also become enabled and
+continue to render natively. An explicit native disable is respected until the
+next managed attachment (including rename/restart) or explicit mode activation:
+
+```lua
+vim.lsp.inlay_hint.enable(false, { bufnr = 0 })
+```
+
+CodeLens mode opts into native CodeLens. Native disable is reported without an
+automatic fallback. Mode changes set `fix.messageSummary.channels.inlayHints`
+and `codeLens`; contradictory explicit setup values are rejected. Project/modeline
+settings keep their higher priority. Status/health report effective conflicts and
+sources rather than overriding them. After correcting a blocking override, select
+the desired mode again to reactivate its backend. A coalesced document configuration lookup
+uses `fix.describeOverrides`; no request is made per summary/message.
+
+Native inlay requests currently cover the whole buffer in tested Neovim0.12.5.
+When the document exceeds effective `limits.rangeLines` (2000 by default), the
+server returns no inlay hints: both custom summaries and field hints can be absent.
+Native CodeLens has its own `limits.codeLensLines` (20000 by default). Status/health
+show effective limits and document size; until configuration is ready they report
+pending. There is no cap increase, range splitting or automatic mode fallback.
+
+Editing hides old custom summaries until a current response arrives. Tailing a
+log can therefore briefly hide summaries on each append. Initial native LSP
+requests may report that document configuration is not ready; subsequent native
+server refresh supplies current data. The plugin adds no retry loop.
 
 ## Tree-sitter and command adapters
 

@@ -3,9 +3,25 @@ local Lsp = require("tests.support.lsp")
 local Plugin = require("venue-reader")
 local tests = MiniTest.new_set()
 local equal = MiniTest.expect.equality
+local ready_documents = {}
+
+local function configure(value)
+  Plugin.setup(value)
+  local config = vim.lsp.config.venue_reader
+  local handler = function(err, result, ctx)
+    if not err and result then
+      ready_documents[ctx.client_id .. ":" .. result.uri] = true
+    end
+    return vim.lsp.handlers["textDocument/publishDiagnostics"](err, result, ctx)
+  end
+  config.handlers["textDocument/publishDiagnostics"] = handler -- luacheck: ignore 122
+end
 
 local function setup()
-  Plugin.setup({ server = { cmd = { assert(vim.env.VENUE_READER_TEST_SERVER), "--stdio" } } })
+  configure({
+    summary = { mode = "off" },
+    server = { cmd = { assert(vim.env.VENUE_READER_TEST_SERVER), "--stdio" } },
+  })
   MiniTest.finally(function()
     vim.lsp.enable("venue_reader", false)
     for _, client in ipairs(vim.lsp.get_clients({ name = "venue_reader" })) do
@@ -22,7 +38,10 @@ local function client(buffer)
   local result
   Lsp.wait(function()
     result = vim.lsp.get_clients({ bufnr = buffer, name = "venue_reader" })[1]
-    return result and result.initialized
+    if not result or not result.initialized then
+      return false
+    end
+    return true
   end, "managed attachment")
   return result
 end
@@ -42,8 +61,14 @@ tests["attach share rename stop and restart a real session"] = function()
   setup()
   local first = Lsp.buffer()
   local active = client(first)
+  Lsp.wait(function()
+    return ready_documents[active.id .. ":" .. vim.uri_from_bufnr(first)]
+  end, "initial document configuration")
   local second = Lsp.buffer()
   equal(client(second).id, active.id)
+  Lsp.wait(function()
+    return ready_documents[active.id .. ":" .. vim.uri_from_bufnr(second)]
+  end, "second document configuration")
   assert(active.server_capabilities.inlayHintProvider)
   assert(vim.lsp.semantic_tokens.is_enabled({ client_id = active.id }))
   local old = vim.uri_from_bufnr(first)
@@ -54,20 +79,15 @@ tests["attach share rename stop and restart a real session"] = function()
   local uri = vim.uri_from_bufnr(first)
   assert(uri ~= old)
   Lsp.wait(function()
-    local response = active:request_sync(
-      "workspace/executeCommand",
-      { command = "fix.describeOverrides", arguments = { uri } },
-      500,
-      first
-    )
-    return response and not response.err
-  end, "configuration after rename")
+    return ready_documents[active.id .. ":" .. uri]
+  end, "document diagnostics after rename")
   local hover = Lsp.request(active, "textDocument/hover", {
     textDocument = { uri = uri },
     position = { line = 0, character = 12 },
   }, first)
   assert(hover and hover.contents.value:find("Heartbeat", 1, true))
-  Plugin.setup({
+  configure({
+    summary = { mode = "off" },
     server = { cmd = { vim.env.VENUE_READER_TEST_SERVER, "--stdio" } },
     settings = { fix = { limits = { rangeLines = 123 } } },
   })
@@ -233,12 +253,14 @@ tests["repeated restart keeps new buffers and drops removed settings"] = functio
   local second = named_buffer(directory)
   local replacement = client(second)
   equal(client(first).id, replacement.id)
-  Plugin.setup({
+  configure({
+    summary = { mode = "off" },
     server = { cmd = { vim.env.VENUE_READER_TEST_SERVER, "--stdio" } },
     settings = { fix = { limits = { rangeLines = 111 } } },
   })
   equal(replacement.settings.fix.limits.rangeLines, 111)
-  Plugin.setup({
+  configure({
+    summary = { mode = "off" },
     server = { cmd = { vim.env.VENUE_READER_TEST_SERVER, "--stdio" } },
     settings = {},
   })
@@ -306,6 +328,9 @@ tests["native stop and enable work without plugin suppression"] = function()
   setup()
   local buffer = named_buffer(vim.fn.tempname())
   local active = client(buffer)
+  Lsp.wait(function()
+    return ready_documents[active.id .. ":" .. vim.uri_from_bufnr(buffer)]
+  end, "configuration before stop")
   local original = vim.notify
   local errors = {}
   MiniTest.finally(function()
@@ -331,7 +356,7 @@ tests["health reports a ready server and a failed discovery"] = function()
   local buffer = named_buffer(vim.fn.tempname())
   client(buffer)
   local reports = {}
-  for _, name in ipairs({ "start", "ok", "info", "error" }) do
+  for _, name in ipairs({ "start", "ok", "info", "error", "warn" }) do
     local previous = vim.health[name]
     MiniTest.finally(function()
       rawset(vim.health, name, previous)
@@ -344,7 +369,10 @@ tests["health reports a ready server and a failed discovery"] = function()
   assert(vim.iter(reports):any(function(item)
     return item[1] == "ok" and item[2]:find("Compatible server", 1, true)
   end))
-  Plugin.setup({ server = { cmd = { "/missing/venue-review-server", "--stdio" } } })
+  configure({
+    summary = { mode = "off" },
+    server = { cmd = { "/missing/venue-review-server", "--stdio" } },
+  })
   local missing = named_buffer(vim.fn.tempname())
   vim.api.nvim_set_current_buf(missing)
   Lsp.wait(function()

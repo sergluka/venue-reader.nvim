@@ -3,6 +3,7 @@ vim.opt.runtimepath:prepend(root)
 vim.opt.runtimepath:prepend(root .. "/.test-deps/mini.test")
 package.path = root .. "/?.lua;" .. root .. "/?/init.lua;" .. package.path
 vim.lsp.log.set_level("ERROR")
+vim.api.nvim_set_option_value("more", false, {})
 
 local MiniTest = require("mini.test")
 MiniTest.setup({

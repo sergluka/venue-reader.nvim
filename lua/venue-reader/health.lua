@@ -17,7 +17,10 @@ function M.check()
   if status.session and status.session.failure then
     vim.health.error(status.session.failure)
   end
+  if status.annotations.problem then
+    vim.health.warn(status.annotations.problem)
+  end
   vim.health.info(vim.inspect(status))
-  vim.health.info("Tree-sitter is optional; custom annotations are not implemented yet")
+  vim.health.info("Tree-sitter is optional; summaries adapt native LSP responses")
 end
 return M

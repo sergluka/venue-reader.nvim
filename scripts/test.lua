@@ -1,8 +1,10 @@
 local root = vim.fs.normalize(vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h"))
 local temporary = vim.fn.tempname()
+
 local success, result = pcall(function()
   assert(vim.fn.has("nvim-0.12") == 1, "Neovim >=0.12 is required")
-  local available = { "real_server", "transport", "dependencies", "lifecycle", "installation" }
+  local available =
+    { "real_server", "transport", "dependencies", "lifecycle", "installation", "summaries" }
   local suites = #arg > 0 and vim.list_slice(arg)
     or (
       vim.env.VENUE_READER_TEST_SUITE ~= nil

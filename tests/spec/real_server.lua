@@ -48,4 +48,33 @@ tests["released server opens and decodes an unsaved named buffer"] = function()
   )
 end
 
+tests["plugin default summaries and native mode transitions use the released server"] = function()
+  local Plugin = require("venue-reader")
+  Plugin.setup({ server = { cmd = { assert(vim.env.VENUE_READER_TEST_SERVER), "--stdio" } } })
+  MiniTest.finally(function()
+    vim.lsp.enable("venue_reader", false)
+  end)
+  local buffer = Lsp.buffer()
+  vim.api.nvim_set_current_buf(buffer)
+  local namespace = vim.api.nvim_create_namespace("venue-reader.summary")
+  Lsp.wait(function()
+    vim.cmd("redraw!")
+    return #vim.api.nvim_buf_get_extmarks(buffer, namespace, 0, -1, {}) > 0
+  end, "default front from release")
+  equal(Plugin.status(buffer).annotations.mode, "front")
+  Plugin.summary("above")
+  Lsp.wait(function()
+    vim.cmd("redraw!")
+    local marks = vim.api.nvim_buf_get_extmarks(buffer, namespace, 0, -1, { details = true })
+    return marks[1] and marks[1][4].virt_lines_above
+  end, "above from release")
+  Plugin.summary("codelens")
+  Lsp.wait(function()
+    return #vim.lsp.codelens.get({ bufnr = buffer }) > 0
+  end, "native CodeLens from release")
+  equal(#vim.api.nvim_buf_get_extmarks(buffer, namespace, 0, -1, {}), 0)
+  Plugin.summary("off")
+  equal(Plugin.status(buffer).annotations.mode, "off")
+end
+
 return tests
