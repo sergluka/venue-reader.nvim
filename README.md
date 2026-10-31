@@ -2,19 +2,26 @@
 
 Server: [Venue Reader](https://github.com/sergluka/venue-reader).
 
-This repository has been initialized. Plugin functionality is not implemented yet.
+An optional Neovim wrapper and adapter for Venue Reader. The server also works
+with Neovim's native LSP client without this plugin. Requires Neovim 0.12+.
+
+Server discovery, installation and LSP lifecycle are available. Native hover,
+diagnostics, code actions, links, selections and document symbols use Neovim's
+standard LSP interfaces. Custom annotations, decoded yank and optional grammar
+management are still TODO.
 
 ## Development
 
 The headless tests use [mini.test](https://github.com/nvim-mini/mini.test) and
-Neovim's built-in LSP client, independently of the future plugin lifecycle.
+Neovim's built-in LSP client, including the plugin lifecycle.
 The real-server suite checks a named, unsaved FIX buffer against the published
 Venue Reader binary. The transport suite controls responses explicitly to test
 ordering, cancellation, startup failure and server exit.
 
 Use Neovim 0.12+, Make, Git, StyLua and Luacheck. Preparation uses `curl` and `tar`
 (`unzip` for Windows archives). Tested tool versions and pinned server release
-identifiers are recorded in [tests/dependencies.json](tests/dependencies.json).
+identifiers are recorded in [tests/dependencies.json](tests/dependencies.json) and
+[lua/venue-reader/release.json](lua/venue-reader/release.json).
 Python is not required. mini.test is a development-only dependency, pinned to
 v0.18.0 commit `35c67cb7f2dc697ed0c7c06400fcf29a8a521d7d`.
 
@@ -42,10 +49,14 @@ make test
 make test SUITE=real_server
 make test SUITE=transport
 make test SUITE=dependencies
+make test SUITE=lifecycle
+make test SUITE=installation
 ```
 
 `transport` and `dependencies` need no server binary; `make prepare-tests` prepares
-mini.test alone. Normal tests verify the framework revision and never download.
+mini.test alone. The installation suite needs the prepared Linux release archive
+for its offline fixtures. Normal tests verify the framework revision and never
+download from the network.
 Tests isolate Neovim configuration, data, state and working directory in a
 temporary directory. mini.test runs the cases, reports results and returns a
 nonzero exit status on failure. Its finalizers clean up clients and buffers.
@@ -74,22 +85,75 @@ Local validation currently covers Linux x86_64 with Neovim 0.12.5. The manifest
 also identifies macOS and Windows artifacts; native tests on those platforms and
 the minimum supported Neovim remain outstanding.
 
-## Overview
-
-TODO: Describe implemented capabilities and the relationship to the server.
-
 ## Installation
 
-TODO: Add tested installation instructions and requirements.
+Add this repository to your plugin manager, then call setup. No other Neovim
+plugin is required. Server discovery starts when a named FIX buffer is opened.
+
+```lua
+require("venue-reader").setup()
+```
+
+Discovery reuses a compatible explicit command, PATH executable or managed
+installation, in that order. Stable server versions `>=0.1.0,<0.2.0` are accepted.
+An invalid explicit command produces an error; it is never silently replaced.
+If none is found, the plugin asynchronously installs pinned v0.1.0 under
+`stdpath("data")/venue-reader/`, verifying SHA-256 before extraction. Compatible
+installations are reused without automatic upgrades or PATH changes.
+
+Automatic installation uses curl, tar and sha256sum on Linux; curl, tar and
+shasum on macOS; curl.exe, tar.exe and certutil.exe on Windows. Missing tools or
+unsupported targets report a manual installation path. Linux automatic artifacts
+require x86_64/glibc >=2.35. macOS x86_64/aarch64 and Windows x86_64 artifacts are
+listed in the manifest; native validation there remains outstanding.
 
 ## Configuration
 
-TODO: Document supported settings and provide working examples.
+For an existing binary or offline use:
 
-## Summary modes
+```lua
+require("venue-reader").setup({
+  server = {
+    cmd = { "/absolute/path/to/venue-reader", "--stdio" },
+    auto_install = false,
+  },
+  settings = { fix = { limits = { rangeLines = 1000 } } },
+})
+```
 
-TODO: Explain implemented modes and their differences with examples.
+`server.cmd` is an argv list, without shell parsing. Its executable must support
+`--version`. Repeated setup is safe; settings update live, while executable
+changes require `:VenueReader restart`. Server settings retain project/modeline
+precedence. Empty `settings.fix` is sent as a JSON object.
 
 ## Usage
 
-TODO: Document implemented commands and workflows.
+Open a `*.fix` file, or use `:set ft=fix`. A buffer must have an explicit name;
+`:file /path/log.fix` assigns one without saving, and `:saveas` also works.
+Renaming closes the old server document before opening the new one. The project
+root is the nearest parent containing `.venue-reader.toml`, otherwise the file's
+directory. Buffers in the same managed session share a client.
+
+- `:VenueReader start` enables the current buffer's managed session.
+- `:VenueReader stop` stops it and suppresses automatic restart for its root.
+- `:VenueReader restart` restarts it with the latest executable configuration.
+- `:VenueReader status` shows session, binary, version, acquisition and failure state.
+- `:VenueReader install server` explicitly retries discovery/installation.
+- `:checkhealth venue-reader` reports version requirements and current state.
+
+Equivalent Lua functions are `start`, `stop`, `restart`, `status` and `install`.
+Buffer operations accept an optional buffer number. Start/stop/restart report
+affected buffers; server exit requires explicit recovery rather than a retry loop.
+Other clients' diagnostics/providers are preserved. No default mappings are added.
+
+## Summary modes
+
+TODO: Implement front, above and CodeLens summaries. Until the custom renderers
+are available, managed clients' native inlay hints, semantic highlighting and
+CodeLens are disabled to avoid full-document annotation work. Native hover,
+diagnostics and navigation remain available.
+
+## Tree-sitter and command adapters
+
+TODO: Optional grammar installation, syntax/textobjects and decoded yank.
+Tree-sitter is not required for server startup or lifecycle commands.

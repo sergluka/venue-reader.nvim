@@ -34,6 +34,7 @@ tests["held requests complete in explicitly selected order"] = function()
   Lsp.ready(client, buffer)
   assert(transport:notification("textDocument/didOpen"))
   local received = {}
+
   local function callback(response_error, result)
     assert(not response_error)
     table.insert(received, result.contents)

@@ -1,14 +1,19 @@
 local MiniTest = require("mini.test")
+
 local function isolated(check)
   local directory = vim.fn.tempname()
   MiniTest.finally(function()
     vim.fn.delete(directory, "rf")
   end)
   local root = assert(vim.env.VENUE_READER_TEST_ROOT)
-  for _, name in ipairs({ "scripts", "tests" }) do
+  for _, name in ipairs({ "scripts", "tests", "lua/venue-reader" }) do
     vim.fn.mkdir(directory .. "/" .. name, "p")
   end
-  for _, name in ipairs({ "scripts/dependencies.lua", "tests/dependencies.json" }) do
+  for _, name in ipairs({
+    "scripts/dependencies.lua",
+    "tests/dependencies.json",
+    "lua/venue-reader/release.json",
+  }) do
     assert(vim.uv.fs_copyfile(root .. "/" .. name, directory .. "/" .. name))
   end
   check(dofile(directory .. "/scripts/dependencies.lua"), directory)
