@@ -134,24 +134,36 @@ Renaming closes the old server document before opening the new one. The project
 root is the nearest parent containing `.venue-reader.toml`, otherwise the file's
 directory. Buffers in the same managed session share a client.
 
-- `:VenueReader start` enables the current buffer's managed session.
-- `:VenueReader stop` stops it and suppresses automatic restart for its root.
-- `:VenueReader restart` restarts it with the latest executable configuration.
+- `:VenueReader start` delegates to `:lsp enable venue_reader`.
+- `:VenueReader stop` delegates to `:lsp stop venue_reader`.
+- `:VenueReader restart` resolves the executable, then delegates to native restart
+  (or enable when no client is running).
 - `:VenueReader status` shows session, binary, version, acquisition and failure state.
 - `:VenueReader install server` explicitly retries discovery/installation.
 - `:checkhealth venue-reader` reports version requirements and current state.
 
 Equivalent Lua functions are `start`, `stop`, `restart`, `status` and `install`.
-Buffer operations accept an optional buffer number. Start/stop/restart report
-affected buffers; server exit requires explicit recovery rather than a retry loop.
+The helpers use native command scope: they target all clients named
+`venue_reader`, including different roots. Native restart preserves attached
+buffers. Stop terminates current clients; use `:lsp disable venue_reader` to
+prevent future automatic attachment, and `:lsp enable venue_reader` to resume.
+After a crash, native Neovim reports the exit; enable attaches eligible buffers
+again. There is no separate plugin suppression or automatic recovery loop.
 Other clients' diagnostics/providers are preserved. No default mappings are added.
 
 ## Summary modes
 
-TODO: Implement front, above and CodeLens summaries. Until the custom renderers
-are available, managed clients' native inlay hints, semantic highlighting and
-CodeLens are disabled to avoid full-document annotation work. Native hover,
-diagnostics and navigation remain available.
+Native inlay hints, semantic highlighting, CodeLens and refresh handlers remain
+under Neovim's control. For example, enable native hints for the current buffer:
+
+```lua
+vim.lsp.inlay_hint.enable(true, { bufnr = 0 })
+```
+
+The plugin does not enable these features on the user's behalf. Native requests
+remain subject to the server's range and document limits on large logs.
+
+TODO: Custom front/above placement and summary-mode helpers.
 
 ## Tree-sitter and command adapters
 

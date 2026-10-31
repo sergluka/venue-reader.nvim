@@ -18,6 +18,7 @@ local function setup()
 end
 
 local function client(buffer)
+  vim.api.nvim_set_current_buf(buffer)
   local result
   Lsp.wait(function()
     result = vim.lsp.get_clients({ bufnr = buffer, name = "venue_reader" })[1]
@@ -26,14 +27,25 @@ local function client(buffer)
   return result
 end
 
+local function named_buffer(directory)
+  local buffer = vim.api.nvim_create_buf(true, false)
+  MiniTest.finally(function()
+    vim.api.nvim_buf_delete(buffer, { force = true })
+  end)
+  vim.api.nvim_buf_set_name(buffer, directory .. "/input-" .. buffer .. ".fix")
+  vim.api.nvim_buf_set_lines(buffer, 0, -1, false, { "8=FIX.4.4|35=0|" })
+  vim.api.nvim_set_option_value("filetype", "fix", { buf = buffer })
+  return buffer
+end
+
 tests["attach share rename stop and restart a real session"] = function()
   setup()
   local first = Lsp.buffer()
   local active = client(first)
   local second = Lsp.buffer()
   equal(client(second).id, active.id)
-  equal(active.server_capabilities.inlayHintProvider, nil)
-  assert(not vim.lsp.semantic_tokens.is_enabled({ client_id = active.id }))
+  assert(active.server_capabilities.inlayHintProvider)
+  assert(vim.lsp.semantic_tokens.is_enabled({ client_id = active.id }))
   local old = vim.uri_from_bufnr(first)
   vim.api.nvim_buf_call(first, function()
     vim.cmd("file renamed.fix")
@@ -60,17 +72,28 @@ tests["attach share rename stop and restart a real session"] = function()
     settings = { fix = { limits = { rangeLines = 123 } } },
   })
   equal(active.settings.fix.limits.rangeLines, 123)
+  local before_save = vim.api.nvim_list_bufs()
   vim.api.nvim_buf_call(first, function()
     vim.cmd("saveas saved.fix")
   end)
+  for _, created in ipairs(vim.api.nvim_list_bufs()) do
+    if not vim.tbl_contains(before_save, created) then
+      MiniTest.finally(function()
+        if vim.api.nvim_buf_is_valid(created) then
+          vim.api.nvim_buf_delete(created, { force = true })
+        end
+      end)
+    end
+  end
   equal(client(first).id, active.id)
   Plugin.stop(first)
   Lsp.wait(function()
     return vim.lsp.get_client_by_id(active.id) == nil
   end, "stop")
   local third = Lsp.buffer()
-  vim.wait(50)
-  equal(#vim.lsp.get_clients({ bufnr = third, name = "venue_reader" }), 0)
+  client(third)
+  Plugin.start()
+  client(first)
   Plugin.restart(first)
   assert(client(first).id ~= active.id)
 end
@@ -92,6 +115,11 @@ end
 tests["rename closes old URI before opening new and preserves unrelated clients"] = function()
   local Transport = require("tests.support.transport")
   local transport = Transport.new()
+  MiniTest.finally(function()
+    if transport.dispatchers then
+      transport:exit(0, 0)
+    end
+  end)
   local original = vim.lsp.rpc.start
   local spawns = 0
   MiniTest.finally(function()
@@ -102,17 +130,11 @@ tests["rename closes old URI before opening new and preserves unrelated clients"
     return transport.command(dispatchers)
   end)
   setup()
-  local buffer = Lsp.buffer()
-  vim.api.nvim_buf_call(buffer, function()
-    vim.cmd("file /tmp/venue-protocol/input.fix")
-  end)
+  local buffer = named_buffer("/tmp/venue-protocol")
   Lsp.wait(function()
     return transport.pending[1] ~= nil
   end, "initialize request")
-  local second = Lsp.buffer()
-  vim.api.nvim_buf_call(second, function()
-    vim.cmd("file /tmp/venue-protocol/second.fix")
-  end)
+  local second = named_buffer("/tmp/venue-protocol")
   vim.wait(30)
   equal(spawns, 1)
   transport:reply(1, {
@@ -165,44 +187,37 @@ tests["rename closes old URI before opening new and preserves unrelated clients"
     end
   end
   assert(vim.lsp.buf_is_attached(buffer, unrelated.id))
-  for _, event in ipairs(transport.events) do
-    assert(
-      not event:match("semanticTokens")
-        and event ~= "textDocument/inlayHint"
-        and event ~= "textDocument/codeLens",
-      event
-    )
-  end
+  assert(managed.server_capabilities.inlayHintProvider)
+  assert(managed.server_capabilities.semanticTokensProvider)
+  assert(managed.server_capabilities.codeLensProvider)
+  vim.lsp.inlay_hint.enable(true, { bufnr = buffer })
+  Lsp.wait(function()
+    return vim.tbl_contains(transport.events, "textDocument/inlayHint")
+  end, "native inlay request")
+  assert(vim.tbl_contains(transport.events, "textDocument/semanticTokens/full"))
   Plugin.stop(buffer)
   Lsp.wait(function()
     return vim.lsp.get_client_by_id(managed.id) == nil
   end, "fake stop")
 end
 
-tests["stop during acquisition prevents attachment and other roots remain usable"] = function()
+tests["native disable during acquisition prevents attachment"] = function()
   setup()
   local buffer = Lsp.buffer()
   vim.api.nvim_buf_call(buffer, function()
     vim.cmd("file /tmp/venue-pending/input.fix")
   end)
-  Plugin.stop(buffer)
+  vim.cmd("lsp disable venue_reader")
   vim.wait(80)
   equal(#vim.lsp.get_clients({ bufnr = buffer, name = "venue_reader" }), 0)
   local other = Lsp.buffer()
   vim.api.nvim_buf_call(other, function()
     vim.cmd("file /tmp/venue-other/input.fix")
   end)
-  client(other)
+  equal(#vim.lsp.get_clients({ bufnr = other, name = "venue_reader" }), 0)
   Plugin.start(buffer)
   client(buffer)
-end
-
-local function named_buffer(directory)
-  local buffer = Lsp.buffer()
-  vim.api.nvim_buf_call(buffer, function()
-    vim.cmd("file " .. vim.fn.fnameescape(directory .. "/input-" .. buffer .. ".fix"))
-  end)
-  return buffer
+  client(other)
 end
 
 tests["repeated restart keeps new buffers and drops removed settings"] = function()
@@ -243,56 +258,51 @@ local function controlled()
   local original = vim.lsp.rpc.start
   local transports = {}
   MiniTest.finally(function()
+    for _, transport in ipairs(transports) do
+      transport:exit(0, 0)
+    end
+  end)
+  MiniTest.finally(function()
     rawset(vim.lsp.rpc, "start", original)
   end)
   rawset(vim.lsp.rpc, "start", function(_, dispatchers)
     local transport = Transport.new()
     transports[#transports + 1] = transport
-    return transport.command(dispatchers)
+    local rpc = transport.command(dispatchers)
+    vim.schedule(function()
+      local request = transport.pending[1]
+      if request then
+        transport.root = request.params.rootUri
+        transport:initialize()
+      end
+    end)
+    return rpc
   end)
   setup()
   return transports
 end
 
-local function initialize(transports, index)
-  Lsp.wait(function()
-    return transports[index] and transports[index].pending[1]
-  end, "initialize pending")
-  transports[index]:initialize()
-end
-
-tests["crash preserves every buffer for explicit recovery"] = function()
+tests["native enable reattaches buffers after a crash"] = function()
   local transports = controlled()
   local directory = vim.fn.tempname()
   local first = named_buffer(directory)
-  initialize(transports, 1)
   local initial = client(first)
   local second = named_buffer(directory)
   equal(client(second).id, initial.id)
-  transports[1]:exit(7, 0)
+  for _, transport in ipairs(transports) do
+    if transport.root == vim.uri_from_fname(directory) then
+      transport:exit(7, 0)
+    end
+  end
   Lsp.wait(function()
     return vim.lsp.get_client_by_id(initial.id) == nil
   end, "crash cleanup")
-  assert(Plugin.status(first).session.suppressed)
-  assert(Plugin.status(first).session.failure:find("7", 1, true))
-  Plugin.restart(first)
-  initialize(transports, 2)
+  equal(#vim.lsp.get_clients({ bufnr = first, name = "venue_reader" }), 0)
+  vim.cmd("lsp enable venue_reader")
   equal(client(first).id, client(second).id)
 end
 
-tests["restart replaces an initializing transport"] = function()
-  local transports = controlled()
-  local buffer = named_buffer(vim.fn.tempname())
-  Lsp.wait(function()
-    return transports[1] and transports[1].pending[1]
-  end, "held initialize")
-  Plugin.restart(buffer)
-  initialize(transports, 2)
-  client(buffer)
-  assert(transports[1].closing)
-end
-
-tests["external clean stop suppresses restart without an error notification"] = function()
+tests["native stop and enable work without plugin suppression"] = function()
   setup()
   local buffer = named_buffer(vim.fn.tempname())
   local active = client(buffer)
@@ -306,14 +316,13 @@ tests["external clean stop suppresses restart without an error notification"] = 
       table.insert(errors, message)
     end
   end)
-  active:stop(true)
+  vim.cmd("lsp stop venue_reader")
   Lsp.wait(function()
     return vim.lsp.get_client_by_id(active.id) == nil
   end, "external stop")
   equal(errors, {})
-  assert(Plugin.status(buffer).session.suppressed)
-  equal(Plugin.status(buffer).session.failure, nil)
-  Plugin.restart(buffer)
+  equal(Plugin.status(buffer).session, nil)
+  vim.cmd("lsp enable venue_reader")
   client(buffer)
 end
 
@@ -348,52 +357,24 @@ tests["health reports a ready server and a failed discovery"] = function()
   end))
 end
 
-tests["restart during exit cleanup does not hang"] = function()
-  local transports = controlled()
-  local buffer = named_buffer(vim.fn.tempname())
-  initialize(transports, 1)
-  client(buffer)
-  transports[1]:exit(7, 0)
-  vim.schedule(function()
-    Plugin.restart(buffer)
-  end)
-  initialize(transports, 2)
-  client(buffer)
-end
-
-tests["stop after root resolution cancels scheduled spawn without warnings"] = function()
-  local transports = controlled()
-  local original = vim.notify
-  local warnings = {}
-  MiniTest.finally(function()
-    rawset(vim, "notify", original)
-  end)
-  rawset(vim, "notify", function(message, level)
-    if level and level >= vim.log.levels.WARN then
-      table.insert(warnings, message)
-    end
-  end)
-  local buffer = vim.api.nvim_create_buf(true, false)
-  MiniTest.finally(function()
-    vim.api.nvim_buf_delete(buffer, { force = true })
-  end)
-  vim.api.nvim_buf_set_name(buffer, vim.fn.tempname() .. "/input.fix")
-  vim.api.nvim_set_option_value("filetype", "fix", { buf = buffer })
-  local resolved = false
-  local config = vim.lsp.config.venue_reader
-  config.root_dir(buffer, function(directory)
-    resolved = true
-    Plugin.stop(buffer)
-    local pending = vim.deepcopy(config)
-    pending.root_dir = directory
-    vim.lsp.start(pending, { bufnr = buffer })
-  end)
+tests["native restart retains buffers and leaves unrelated clients alone"] = function()
+  setup()
+  local directory = vim.fn.tempname()
+  local first = named_buffer(directory)
+  local old = client(first)
+  local second = named_buffer(directory)
+  equal(client(second).id, old.id)
+  local Transport = require("tests.support.transport")
+  local foreign = Transport.new()
+  local unrelated = Lsp.start({ name = "unrelated", cmd = foreign.command }, first)
+  foreign:initialize()
+  Lsp.ready(unrelated, first)
+  vim.cmd("lsp restart venue_reader")
   Lsp.wait(function()
-    return resolved
-  end, "resolved then stopped")
-  vim.wait(50)
-  equal(#transports, 0)
-  equal(warnings, {})
-  equal(#vim.lsp.get_clients({ bufnr = buffer, name = "venue_reader" }), 0)
+    local current = vim.lsp.get_clients({ bufnr = first, name = "venue_reader" })[1]
+    return current and current.initialized and current.id ~= old.id
+  end, "native replacement")
+  equal(client(first).id, client(second).id)
+  assert(vim.lsp.buf_is_attached(first, unrelated.id))
 end
 return tests
