@@ -1,5 +1,6 @@
 local M = {}
 
+local Highlights = require("venue-reader.highlights")
 local Server = require("venue-reader.server")
 local Summaries = require("venue-reader.summaries")
 
@@ -142,6 +143,7 @@ function M.setup(value)
     end
   end
   candidate.settings = settings(Summaries.settings(candidate.summary, candidate.settings))
+  Highlights.setup()
   local mode_changed = Summaries.configure(candidate.summary, managed)
   local changed = options and not vim.deep_equal(options.settings, candidate.settings)
   generation = generation + 1

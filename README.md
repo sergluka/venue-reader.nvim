@@ -8,7 +8,8 @@ with Neovim's native LSP client without this plugin. Requires Neovim 0.12+.
 Server discovery, installation and LSP lifecycle are available. Native hover,
 diagnostics, code actions, links, selections and document symbols use Neovim's
 standard LSP interfaces. Front/above summary rendering and native CodeLens are
-available. Decoded yank and optional grammar management are still TODO.
+available. Native field hints and semantic highlight defaults are included.
+Decoded yank and optional grammar management are still TODO.
 
 ## Development
 
@@ -52,6 +53,7 @@ make test SUITE=dependencies
 make test SUITE=lifecycle
 make test SUITE=installation
 make test SUITE=summaries
+make test SUITE=highlights
 ```
 
 `transport` and `dependencies` need no server binary; `make prepare-tests` prepares
@@ -217,6 +219,94 @@ Editing hides old custom summaries until a current response arrives. Tailing a
 log can therefore briefly hide summaries on each append. Initial native LSP
 requests may report that document configuration is not ready; subsequent native
 server refresh supplies current data. The plugin adds no retry loop.
+
+## Field hints and semantic colours
+
+Neovim renders tag names, enum labels and group paths as native inlay hints.
+Configure their server output through the existing settings:
+
+```lua
+require("venue-reader").setup({
+  settings = { fix = {
+    inlayHints = {
+      tagNames = { enabled = true },
+      enumValues = { enabled = true },
+      groupPaths = { enabled = true },
+    },
+    semanticTokens = { enabled = true },
+  } },
+})
+```
+
+Group paths require tag-name hints; disabling tag names also removes group paths.
+Project/modeline settings keep their normal precedence. Field settings apply to
+the server session; the native inlay enable gate is buffer-wide. In codelens/off
+summary mode, enable field hints explicitly if needed:
+
+```lua
+vim.lsp.inlay_hint.enable(true, { bufnr = 0 })
+```
+
+All native inlay labels use `LspInlayHint`. Group backgrounds colour source text,
+not individual virtual labels. The plugin adds these filetype-scoped defaults:
+
+| Semantic highlight | Default |
+| --- | --- |
+| `@lsp.type.price.fix`, `@lsp.type.quantity.fix`, `@lsp.type.money.fix` | Link to `@number` |
+| `@lsp.type.timestamp.fix` | Link to `@string` |
+| `@lsp.typemod.group.group1a.fix`, `group1b.fix` | Background from `DiffAdd`, `DiffChange` |
+| `@lsp.typemod.group.group2a.fix`, `group2b.fix` | Background from `DiffDelete`, `DiffText` |
+| `@lsp.typemod.group.group3a.fix`, `group3b.fix` | Background from `Pmenu`, `Folded` |
+
+### Repeating-group hierarchy and alternating colours
+
+The server supplies a custom semantic token type `group` for a whole-entry
+background overlay. Its modifier `group1a`, for example, selects a nesting level
+and one of two alternating colours. Neovim combines these into the highlight
+name `@lsp.typemod.group.group1a.fix`; `.fix` scopes it to the FIX filetype.
+
+| Nesting level | Colour pair | Adjacent entries in one group |
+| --- | --- | --- |
+| 1 (outermost) | `group1a` / `group1b` | `1a → 1b → 1a → …` |
+| 2 | `group2a` / `group2b` | `2a → 2b → 2a → …` |
+| 3 and deeper | `group3a` / `group3b` | `3a → 3b → 3a → …` |
+
+At each level, odd-numbered entries use `a` and even-numbered entries use `b`.
+These interleaved colours distinguish neighbouring entries; `a` and `b` do not
+identify different group types. Each group starts its own alternation at `a`,
+including a nested group under a new parent entry.
+
+![Three FIX group entries alternate green, blue, green. Nested entries use a separate colour pair at each level, restarting at a under a new parent.](docs/group-colours.svg)
+
+The first example shows three entries in `NoMDEntries(268)` within one synthetic
+message. The second shows the nesting hierarchy schematically. Colours are
+illustrative; themes may give the pairs different or identical backgrounds.
+
+Background defaults use only the source theme group's RGB/terminal background,
+leaving field foregrounds intact. Source `reverse`/`standout` attributes are not
+interpreted: only explicit `bg`/`ctermbg` values are copied. A missing background
+leaves that overlay unstyled, even if the source uses a reversed foreground.
+Existing theme/user definitions win. Defaults are reapplied after `ColorScheme`;
+theme-derived backgrounds are recalculated when the scheme clears highlights.
+Colours are shared by FIX buffers, rather than configured per buffer/window.
+
+Customize them through standard Neovim highlights, in your `ColorScheme` callback
+for persistence across theme changes:
+
+```lua
+vim.api.nvim_set_hl(0, "@lsp.type.price.fix", { link = "@number" })
+vim.api.nvim_set_hl(0, "@lsp.typemod.group.group1a.fix", { bg = "#203028" })
+```
+
+After setup, use `{}` for an overlay highlight to clear its background; a later
+setup or colour-scheme reset can restore defaults for empty groups. Avoid setting
+backgrounds on generic `@lsp.mod.group1a.fix` groups: both the overlay and individual
+source fields carry group identity. Semantic rendering, encoding,
+refresh and limits remain native/server-owned. No Tree-sitter grammar is required;
+when present, its base highlighting follows Neovim's normal priority rules.
+Full/delta semantic responses cover the server's bounded prefix
+(`limits.semanticTokensFullLines`, default 2000 lines); the plugin does not fetch
+additional ranges to extend it.
 
 ## Tree-sitter and command adapters
 

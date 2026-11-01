@@ -1,4 +1,5 @@
 local M = {}
+
 local namespace = vim.api.nvim_create_namespace("venue-reader.summary")
 local documents = {}
 local options = { mode = "off", highlight = "VenueReaderSummary" }

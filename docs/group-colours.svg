@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="700" viewBox="0 0 960 700" role="img" aria-labelledby="title description">
+  <title id="title">Repeating-group colours: alternating siblings and nesting levels</title>
+  <desc id="description">Three entries of NoMDEntries alternate group1a, group1b, group1a. In a nested hierarchy, level two uses group2a and group2b, and level three uses group3a and group3b. Each nested group starts its own alternation at a.</desc>
+  <rect width="960" height="700" rx="12" fill="#ffffff"/>
+  <g font-family="sans-serif" fill="#172033">
+    <text x="28" y="38" font-size="22" font-weight="bold">Adjacent entries alternate a / b / a</text>
+    <text x="28" y="65" font-size="15">Synthetic FIX · NoMDEntries(268) = 3 · one message, wrapped here by entry</text>
+    <text x="40" y="99" font-size="16" font-family="monospace">8=FIX.4.4|35=W|268=3|</text>
+    <rect x="28" y="112" width="904" height="36" rx="5" fill="#dcfce7"/>
+    <rect x="28" y="154" width="904" height="36" rx="5" fill="#dbeafe"/>
+    <rect x="28" y="196" width="904" height="36" rx="5" fill="#dcfce7"/>
+    <g font-size="16" font-family="monospace">
+      <text x="40" y="136">269=0|270=1.25|271=10|</text>
+      <text x="40" y="178">269=1|270=1.26|271=12|</text>
+      <text x="40" y="220">269=2|270=1.25|271=5|</text>
+      <text x="660" y="136">entry 1 → group1a</text>
+      <text x="660" y="178">entry 2 → group1b</text>
+      <text x="660" y="220">entry 3 → group1a</text>
+    </g>
+    <text x="28" y="278" font-size="22" font-weight="bold">Nesting selects a colour pair</text>
+    <text x="28" y="305" font-size="15">Schematic hierarchy · each nested group alternates independently</text>
+    <g stroke="#94a3b8" stroke-width="2" fill="none">
+      <path d="M44 360 V552 H68 M44 384 H68 M44 510 H68"/>
+      <path d="M84 402 V468 H108 M84 426 H108"/>
+      <path d="M44 612 V636 H68"/>
+    </g>
+    <rect x="28" y="324" width="904" height="36" rx="5" fill="#dcfce7"/>
+    <rect x="68" y="366" width="864" height="36" rx="5" fill="#fef3c7"/>
+    <rect x="108" y="408" width="824" height="36" rx="5" fill="#fce7f3"/>
+    <rect x="108" y="450" width="824" height="36" rx="5" fill="#cffafe"/>
+    <rect x="68" y="492" width="864" height="36" rx="5" fill="#ede9fe"/>
+    <rect x="68" y="534" width="864" height="36" rx="5" fill="#fef3c7"/>
+    <rect x="28" y="576" width="904" height="36" rx="5" fill="#dbeafe"/>
+    <rect x="68" y="618" width="864" height="36" rx="5" fill="#fef3c7"/>
+    <g font-size="16" font-family="monospace">
+      <text x="40" y="348">Level 1 · entry 1</text><text x="784" y="348">group1a</text>
+      <text x="80" y="390">Level 2 · entry 1</text><text x="784" y="390">group2a</text>
+      <text x="120" y="432">Level 3 · entry 1</text><text x="784" y="432">group3a</text>
+      <text x="120" y="474">Level 3 · entry 2</text><text x="784" y="474">group3b</text>
+      <text x="80" y="516">Level 2 · entry 2</text><text x="784" y="516">group2b</text>
+      <text x="80" y="558">Level 2 · entry 3</text><text x="784" y="558">group2a</text>
+      <text x="40" y="600">Level 1 · entry 2</text><text x="784" y="600">group1b</text>
+      <text x="80" y="642">Level 2 · entry 1 (new parent)</text><text x="784" y="642">group2a</text>
+    </g>
+    <text x="28" y="682" font-size="14">Illustrative colours; actual backgrounds come from your theme. Levels 3 and deeper share group3a / group3b.</text>
+  </g>
+</svg>

@@ -3,8 +3,15 @@ local temporary = vim.fn.tempname()
 
 local success, result = pcall(function()
   assert(vim.fn.has("nvim-0.12") == 1, "Neovim >=0.12 is required")
-  local available =
-    { "real_server", "transport", "dependencies", "lifecycle", "installation", "summaries" }
+  local available = {
+    "real_server",
+    "transport",
+    "dependencies",
+    "lifecycle",
+    "installation",
+    "summaries",
+    "highlights",
+  }
   local suites = #arg > 0 and vim.list_slice(arg)
     or (
       vim.env.VENUE_READER_TEST_SUITE ~= nil
@@ -39,7 +46,11 @@ local success, result = pcall(function()
     environment[name] = temporary .. "/" .. name
     vim.fn.mkdir(environment[name], "p")
   end
-  if vim.tbl_contains(suites, "real_server") or vim.tbl_contains(suites, "lifecycle") then
+  if
+    vim.tbl_contains(suites, "real_server")
+    or vim.tbl_contains(suites, "lifecycle")
+    or vim.tbl_contains(suites, "highlights")
+  then
     local binary = vim.env.VENUE_READER_TEST_SERVER
     local override = binary ~= nil and binary ~= ""
     binary = override and vim.fn.fnamemodify(binary, ":p") or dependencies.verify()
