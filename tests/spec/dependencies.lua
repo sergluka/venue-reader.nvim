@@ -14,6 +14,7 @@ local function isolated(check)
     "tests/dependencies.json",
     "lua/venue-reader/release.json",
     "lua/venue-reader/release.lua",
+    "lua/venue-reader/grammar.json",
   }) do
     assert(vim.uv.fs_copyfile(root .. "/" .. name, directory .. "/" .. name))
   end
@@ -100,6 +101,44 @@ tests["changing only the pin updates preparation URL and runtime compatibility"]
       )
       MiniTest.expect.equality(response.accepted, candidate[2])
     end
+  end)
+end
+
+tests["prepared parser rejects tampered bytes and stale source metadata"] = function()
+  isolated(function(dependencies, directory)
+    local root = assert(vim.env.VENUE_READER_TEST_ROOT)
+    for _, name in ipairs({
+      "mini.test",
+      "nvim-treesitter",
+      "nvim-treesitter-textobjects",
+      "tree-sitter-fix",
+    }) do
+      local result = vim
+        .system({
+          "git",
+          "clone",
+          "--no-hardlinks",
+          root .. "/.test-deps/" .. name,
+          directory .. "/.test-deps/" .. name,
+        })
+        :wait(5000)
+      assert(result.code == 0, result.stderr)
+    end
+    local relative = "/.test-deps/treesitter/"
+    vim.fn.mkdir(directory .. relative .. "runtime/parser", "p")
+    for _, name in ipairs({ "build.json", "runtime/parser/fix.so" }) do
+      assert(vim.uv.fs_copyfile(root .. relative .. name, directory .. relative .. name))
+    end
+    dependencies.verify_tests()
+    local binary = directory .. relative .. "runtime/parser/fix.so"
+    vim.fn.writefile({ "not the prepared parser" }, binary)
+    MiniTest.expect.error(dependencies.verify_tests, "FIX test parser checksum differs")
+    assert(vim.uv.fs_copyfile(root .. relative .. "runtime/parser/fix.so", binary))
+    local metadata = directory .. relative .. "build.json"
+    local build = vim.json.decode(table.concat(vim.fn.readfile(metadata), "\n"))
+    build.commit = "different grammar revision"
+    vim.fn.writefile({ vim.json.encode(build) }, metadata)
+    MiniTest.expect.error(dependencies.verify_tests, "FIX test parser source revision differs")
   end)
 end
 

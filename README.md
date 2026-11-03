@@ -9,8 +9,8 @@ Server discovery, installation and LSP lifecycle are available. Native hover,
 diagnostics, code actions, links, selections and document symbols use Neovim's
 standard LSP interfaces. Front/above summary rendering and native CodeLens are
 available. Native field hints and semantic highlight defaults are included.
-Decoded yank and server command helpers are included. Optional grammar management
-is still TODO.
+Decoded yank and server command helpers are included. Optional Tree-sitter adds
+base highlighting, SOH conceal and structural textobjects.
 
 ## Development
 
@@ -20,23 +20,27 @@ The real-server suite checks a named, unsaved FIX buffer against the published
 Venue Reader binary. The transport suite controls responses explicitly to test
 ordering, cancellation, startup failure and server exit.
 
-Use Neovim 0.12+, Make, Git, StyLua and Luacheck. Preparation uses `curl` and `tar`
+Use Neovim 0.12+, Make, Git, StyLua and Luacheck. Preparing the parser also needs
+the Tree-sitter CLI and a C compiler. Preparation uses `curl` and `tar`
 (`unzip` for Windows archives). Tested tool versions and pinned server release
 identifiers are recorded in [tests/dependencies.json](tests/dependencies.json) and
-[lua/venue-reader/release.json](lua/venue-reader/release.json).
+[lua/venue-reader/release.json](lua/venue-reader/release.json); the grammar pin is
+in [lua/venue-reader/grammar.json](lua/venue-reader/grammar.json).
 Python is not required. mini.test is a development-only dependency, pinned to
 v0.18.0 commit `35c67cb7f2dc697ed0c7c06400fcf29a8a521d7d`.
 
-From this repository, prepare mini.test and the pinned server once:
+From this repository, prepare the test dependencies and pinned server once:
 
 ```sh
 make prepare
 ```
 
-Preparation clones the pinned mini.test release into `.test-deps/mini.test`.
+Preparation clones pinned mini.test, nvim-treesitter, textobjects and grammar
+sources into `.test-deps/`, then builds an isolated FIX parser from the generated
+C sources. It records the grammar revision, CLI version and parser checksum.
 It also selects a platform archive for the pinned server release, verifies its
 SHA-256 and stores the binary and notices in the ignored `.test-deps/` directory.
-It does not change PATH. Once mini.test is prepared, supply a release archive
+It does not change PATH. Once test dependencies are prepared, supply a release archive
 to prepare the server without downloading:
 
 ```sh
@@ -59,12 +63,14 @@ make test SUITE=selection
 make test SUITE=commands
 make test SUITE=yank
 make test SUITE=commands_server
+make test SUITE=treesitter
 ```
 
 `transport`, `dependencies`, `selection`, `commands` and `yank` need no server
-binary; `make prepare-tests` prepares mini.test alone. The installation suite needs the prepared Linux release archive
-for its offline fixtures. Normal tests verify the framework revision and never
-download from the network.
+binary; `make prepare-tests` prepares the framework, optional plugin checkouts
+and compiled parser without the server. The installation suite needs the prepared
+Linux release archive for its offline fixtures. Normal tests verify dependency
+revisions and parser integrity; they never download or compile.
 Tests isolate Neovim configuration, data, state and working directory in a
 temporary directory. mini.test runs the cases, reports results and returns a
 nonzero exit status on failure. Its finalizers clean up clients and buffers.
@@ -88,6 +94,17 @@ make test SUITE=commands_server
 The runner labels overrides separately; their results are not release-artifact
 evidence. `make test NVIM=/path/to/nvim` selects another Neovim executable. The prepared
 release archive and extracted binary are rechecked before release tests.
+
+A separate opt-in smoke downloads and builds the grammar in isolated XDG
+directories, using only the prepared manager and a supplied lazy.nvim checkout:
+
+```sh
+make smoke-grammar LAZY=/absolute/path/to/lazy.nvim
+```
+
+It checks dependency load order and explicit retry after late manager loading,
+with a separate timeout. Evidence is saved in `.test-deps/grammar-smoke.json`.
+It does not load personal configuration or modify personal parsers.
 
 Format changed files with `make format`. The Makefile only coordinates standard
 commands; tests can also be launched directly:
@@ -136,6 +153,7 @@ require("venue-reader").setup({
   },
   summary = { mode = "front", highlight = "VenueReaderSummary" },
   commands = { timeout_ms = 5000 },
+  treesitter = { enabled = true, auto_install = true },
   settings = { fix = {} },
 })
 ```
@@ -160,10 +178,11 @@ directory. Buffers in the same managed session share a client.
 - `:VenueReader summary front|above|codelens|off` selects the session summary mode.
 - `:VenueReader status` shows session, binary, version, acquisition and failure state.
 - `:VenueReader install server` explicitly retries discovery/installation.
+- `:VenueReader install grammar` retries optional FIX parser acquisition.
 - `:checkhealth venue-reader` reports version requirements and current state.
 
-Equivalent Lua functions are `start`, `stop`, `restart`, `status`, `install` and
-`summary(mode)`.
+Equivalent Lua functions are `start`, `stop`, `restart`, `status`,
+`install("server" | "grammar")` and `summary(mode)`. `install()` defaults to server.
 The helpers use native command scope: they target all clients named
 `venue_reader`, including different roots. Native restart preserves attached
 buffers. Stop terminates current clients; use `:lsp disable venue_reader` to
@@ -408,5 +427,174 @@ additional ranges to extend it.
 
 ## Tree-sitter
 
-TODO: Optional grammar installation and syntax/textobjects.
-Tree-sitter is not required for server startup or lifecycle commands.
+Tree-sitter provides base syntax highlighting before and after LSP responses.
+It does not decode fields, generate summaries or extend the server's processing
+limits. Named and unnamed normal buffers with `filetype=fix` can use it; only
+LSP attachment requires a document name. Native semantic highlighting keeps its
+normal priority over the syntax layer.
+
+A compatible installed FIX parser is reused without a manager or download.
+Compatibility is checked by native parser loading and the effective highlights
+query. Textobject queries are loaded on selection; their errors do not disable
+base highlighting. If the
+parser is missing, the plugin can install the [pinned grammar](lua/venue-reader/grammar.json)
+asynchronously through nvim-treesitter **main**. Its Tree-sitter CLI, C compiler,
+`curl` and `tar` requirements apply; see the manager's installation instructions.
+The plugin preserves existing parser recipes and the manager's install directory.
+It does not automatically upgrade or replace an incompatible installed parser.
+
+Tree-sitter is optional. Missing dependencies, network or build failures leave
+LSP available. One plugin warning is reported per failed installation attempt;
+upstream manager output is independent. After fixing the cause, run
+`:VenueReader install grammar`. Concurrent requests share the pending install.
+A query-only/incomplete manager installation or incompatible parser may need
+manual repair and a Neovim restart; retry does not force an overwrite.
+
+For lazy.nvim, optional dependencies can be loaded before setup as follows:
+
+```lua
+{
+  "sergluka/venue-reader.nvim",
+  main = "venue-reader",
+  dependencies = {
+    {
+      "nvim-treesitter/nvim-treesitter",
+      branch = "main",
+      opts = function()
+        local install_dir = vim.fn.stdpath("data") .. "/site"
+        vim.fn.mkdir(install_dir, "p")
+        return { install_dir = install_dir }
+      end,
+    },
+    { "nvim-treesitter/nvim-treesitter-textobjects", branch = "main" },
+  },
+  opts = {},
+}
+```
+
+Creating the install directory before loading the dependencies keeps Lazy from
+removing a nonexistent directory from runtimepath on first use. If the manager
+is already configured, keep its chosen install directory and ensure it is on
+runtimepath.
+
+The manager is needed only for installation; textobjects is needed only for
+selection helpers. Neither plugin is bootstrapped automatically. If the manager
+loads after an acquisition failure, run `:VenueReader install grammar` explicitly.
+Tested dependency revisions are in [tests/dependencies.json](tests/dependencies.json).
+
+### Disable or limit Tree-sitter
+
+Set `treesitter.enabled = false` to disable this adapter's Tree-sitter features,
+or `treesitter.auto_install = false` to reuse installed parsers without downloading.
+An enabled predicate can reuse your existing large-file policy without scanning
+buffer contents:
+
+```lua
+require("venue-reader").setup({
+  treesitter = {
+    enabled = function(bufnr)
+      return vim.b[bufnr].large_file ~= true -- Use your own large-file flag.
+    end,
+    auto_install = true,
+  },
+})
+```
+
+Set `vim.b.venue_reader_treesitter = false` for a buffer opt-out, including before
+an installation finishes. The predicate and opt-out also gate textobject actions.
+There is no built-in file-size threshold. Standard textobjects may parse and
+search the whole syntax tree on demand, so disable them for files your policy
+considers too large.
+
+Automatic highlighting starts once per loaded FIX-filetype episode. A native
+`vim.treesitter.stop()` is not undone by buffer entry, LSP restart or repeated
+setup. Returning to FIX after a filetype change, or unloading/reloading the buffer,
+begins a new episode. The buffer opt-out persists until you clear it.
+
+An already active external highlighter is left under its existing management.
+The adapter tracks whether it started highlighting, without reading Neovim's
+internal instance registry. If another component subsequently replaces that
+instance with `stop/start`, disabling the adapter or changing filetype can stop
+the replacement too. This is an accepted limitation of the lightweight tracking.
+
+### SOH display and selection
+
+The query can display SOH as `|` while preserving the original bytes. The plugin
+leaves window conceal options unchanged: `conceallevel=0` leaves SOH unconcealed,
+and `concealcursor` controls conceal on the cursor line. For example, opt in for
+the current window:
+
+```vim
+setlocal conceallevel=2 concealcursor=nc
+```
+
+The optional nvim-treesitter-textobjects **main** engine handles selection through
+these global `<Plug>` targets in Visual and operator-pending mode. No keys are
+bound by default; every invocation checks FIX-buffer eligibility.
+
+| Target | Syntax node |
+| --- | --- |
+| `<Plug>(VenueReaderTag)` | Numeric tag |
+| `<Plug>(VenueReaderValue)` | Field value |
+| `<Plug>(VenueReaderField)` | Complete tag=value field |
+| `<Plug>(VenueReaderMessage)` | Complete message |
+| `<Plug>(VenueReaderComment)` | Comment |
+
+```lua
+vim.keymap.set({ "x", "o" }, "if", "<Plug>(VenueReaderField)")
+vim.keymap.set({ "x", "o" }, "iv", "<Plug>(VenueReaderValue)")
+```
+
+The equivalent Lua helper is `require("venue-reader").textobject("field")`, with
+`tag`, `value`, `message` and `comment` also accepted. Your textobjects settings
+for selection mode, lookahead and surrounding whitespace remain in effect.
+`:VenueReader status` reports buffer eligibility and parser/acquisition state;
+`:checkhealth venue-reader` reports global dependency state without installing
+or parsing.
+
+### Suggested navigation mappings
+
+These buffer-local mappings require nvim-treesitter-textobjects **main** and
+work in Normal, Visual and operator-pending modes. Choose different keys if these
+already have a useful binding in your setup.
+
+| Node | Next / previous start | Next / previous end |
+| --- | --- | --- |
+| Field | `]]` / `[[` | `]}` / `[{` |
+| Message | `]m` / `[m` | `]M` / `[M` |
+| Comment | `]g` / `[g` | `]G` / `[G` |
+
+```lua
+-- after/ftplugin/fix.lua
+local move = require("nvim-treesitter-textobjects.move")
+
+local function map_motion(key, method, capture, description)
+  vim.keymap.set({ "n", "x", "o" }, key, function()
+    local state = require("venue-reader").status().treesitter
+    if state.eligible and state.parser_available then
+      move[method](capture, "textobjects")
+    end
+  end, { buffer = true, desc = "FIX: " .. description })
+end
+
+map_motion("]]", "goto_next_start", "@field", "Next field start")
+map_motion("[[", "goto_previous_start", "@field", "Previous field start")
+map_motion("]}", "goto_next_end", "@field", "Next field end")
+map_motion("[{", "goto_previous_end", "@field", "Previous field end")
+
+map_motion("]m", "goto_next_start", "@message", "Next message start")
+map_motion("[m", "goto_previous_start", "@message", "Previous message start")
+map_motion("]M", "goto_next_end", "@message", "Next message end")
+map_motion("[M", "goto_previous_end", "@message", "Previous message end")
+
+map_motion("]g", "goto_next_start", "@comment", "Next comment start")
+map_motion("[g", "goto_previous_start", "@comment", "Previous comment start")
+map_motion("]G", "goto_next_end", "@comment", "Next comment end")
+map_motion("[G", "goto_previous_end", "@comment", "Previous comment end")
+```
+
+For example, `]]` moves to the next field and `d]]` deletes up to its start.
+The guard respects the plugin's predicate and buffer opt-out, and skips movement
+until a parser is available. These motions can parse/search the whole syntax
+tree, so apply your large-file policy. Native LSP document symbols remain
+available for navigating the server's message outline.

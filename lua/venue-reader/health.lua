@@ -20,6 +20,10 @@ function M.check()
   if status.annotations.problem then
     vim.health.warn(status.annotations.problem)
   end
+  status.treesitter = require("venue-reader.treesitter").status(false)
+  if status.treesitter.error then
+    vim.health.warn(status.treesitter.error)
+  end
   vim.health.info(vim.inspect(status))
   vim.health.info("Tree-sitter is optional; summaries adapt native LSP responses")
 end

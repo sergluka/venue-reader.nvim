@@ -2,11 +2,20 @@
   "tools": {
     "nvim": "0.12.5",
     "stylua": "2.3.0",
-    "luacheck": "1.2.0"
+    "luacheck": "1.2.0",
+    "tree_sitter": "0.26.11"
   },
   "mini_test": {
     "repository": "https://github.com/nvim-mini/mini.test.git",
     "tag": "v0.18.0",
     "commit": "35c67cb7f2dc697ed0c7c06400fcf29a8a521d7d"
+  },
+  "treesitter": {
+    "repository": "https://github.com/nvim-treesitter/nvim-treesitter.git",
+    "commit": "7efc1b58a8061d29786860006c7257c90a5196dc"
+  },
+  "textobjects": {
+    "repository": "https://github.com/nvim-treesitter/nvim-treesitter-textobjects.git",
+    "commit": "5c7b0263797dfd1bd6202f2b219f3b53a80b2187"
   }
 }

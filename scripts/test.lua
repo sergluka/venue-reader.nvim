@@ -15,6 +15,7 @@ local success, result = pcall(function()
     "commands",
     "yank",
     "commands_server",
+    "treesitter",
   }
   local suites = #arg > 0 and vim.list_slice(arg)
     or (
@@ -56,6 +57,7 @@ local success, result = pcall(function()
     or vim.tbl_contains(suites, "lifecycle")
     or vim.tbl_contains(suites, "highlights")
     or command_integration
+    or vim.tbl_contains(suites, "treesitter")
   then
     local binary = vim.env.VENUE_READER_TEST_SERVER
     local override = binary ~= nil and binary ~= ""

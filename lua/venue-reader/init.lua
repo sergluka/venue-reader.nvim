@@ -4,6 +4,7 @@ local Commands = require("venue-reader.commands")
 local Highlights = require("venue-reader.highlights")
 local Server = require("venue-reader.server")
 local Summaries = require("venue-reader.summaries")
+local Treesitter = require("venue-reader.treesitter")
 local Yank = require("venue-reader.yank")
 
 local options
@@ -11,9 +12,11 @@ local ready
 local generation = 0
 local lifetimes = {}
 local owner_marker = tostring(M)
+
 local defaults = {
   server = { auto_install = true },
   commands = { timeout_ms = 5000 },
+  treesitter = { enabled = true, auto_install = true },
   settings = { fix = vim.empty_dict() },
   summary = { mode = "front", highlight = "VenueReaderSummary" },
 }
@@ -166,11 +169,16 @@ function M.status(buffer)
     },
     acquisition = Server.status(),
     annotations = Summaries.status(buffer, client and client.id),
-    treesitter = "not managed",
+    treesitter = Treesitter.status(buffer),
   }
 end
 
-function M.install()
+function M.install(target)
+  target = target or "server"
+  assert(target == "server" or target == "grammar", "Use install server|grammar")
+  if target == "grammar" then
+    return Treesitter.install()
+  end
   Server.resolve(vim.tbl_extend("force", options.server, { auto_install = true }), function(err)
     if err then
       notify(err, vim.log.levels.ERROR)
@@ -202,6 +210,10 @@ function M.yank(value)
   return Yank.run(value)
 end
 
+function M.textobject(kind)
+  return Treesitter.textobject(kind)
+end
+
 function M.operator()
   return Yank.operator()
 end
@@ -231,6 +243,16 @@ function M.setup(value)
   value = value or {}
   local candidate = vim.tbl_deep_extend("force", vim.deepcopy(defaults), value)
   assert(type(candidate.server.auto_install) == "boolean", "server.auto_install must be boolean")
+  assert(type(candidate.treesitter) == "table", "treesitter must be a table")
+  assert(
+    type(candidate.treesitter.enabled) == "boolean"
+      or type(candidate.treesitter.enabled) == "function",
+    "treesitter.enabled must be boolean or a function"
+  )
+  assert(
+    type(candidate.treesitter.auto_install) == "boolean",
+    "treesitter.auto_install must be boolean"
+  )
   assert(type(candidate.commands) == "table", "commands must be a table")
   local timeout = candidate.commands.timeout_ms
   assert(
@@ -359,6 +381,11 @@ function M.setup(value)
     "<Cmd>lua require('venue-reader').yank({ mode = 'visual', mapping = true })<CR>",
     { desc = "Decode the FIX selection to a register" }
   )
+  for _, kind in ipairs({ "Tag", "Value", "Field", "Message", "Comment" }) do
+    vim.keymap.set({ "x", "o" }, "<Plug>(VenueReader" .. kind .. ")", function()
+      M.textobject(kind:lower())
+    end, { desc = "Select FIX " .. kind:lower() })
+  end
   vim.api.nvim_create_user_command("VenueReader", function(command)
     local success, failure = pcall(function()
       local arguments = command.fargs
@@ -381,8 +408,8 @@ function M.setup(value)
         assert(#arguments == 2, "Use summary front|above|codelens|off")
         M.summary(arguments[2])
       elseif action == "install" then
-        assert(#arguments == 2 and arguments[2] == "server", "Use install server")
-        M.install()
+        assert(#arguments == 2, "Use install server|grammar")
+        M.install(arguments[2])
       elseif action == "status" then
         assert(#arguments == 1, "Use status")
         notify(vim.inspect(M.status()))
@@ -397,7 +424,7 @@ function M.setup(value)
       else
         error(
           "Use start, stop, restart, status, summary, yank, dictionary, settings, tag"
-            .. " or install server"
+            .. " or install server|grammar"
         )
       end
     end)
@@ -415,6 +442,7 @@ function M.setup(value)
         "restart",
         "status",
         "install server",
+        "install grammar",
         "summary front",
         "summary above",
         "summary codelens",
@@ -427,6 +455,7 @@ function M.setup(value)
     end,
   })
   vim.lsp.enable("venue_reader")
+  Treesitter.setup(options.treesitter)
   return mode_changed
 end
 
