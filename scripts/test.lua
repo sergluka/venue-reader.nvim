@@ -16,27 +16,18 @@ local success, result = pcall(function()
     "yank",
     "commands_server",
   }
-  local default_suites = vim.tbl_filter(function(suite)
-    return suite ~= "commands_server"
-  end, available)
   local suites = #arg > 0 and vim.list_slice(arg)
     or (
       vim.env.VENUE_READER_TEST_SUITE ~= nil
         and vim.env.VENUE_READER_TEST_SUITE ~= ""
         and { vim.env.VENUE_READER_TEST_SUITE }
-      or default_suites
+      or available
     )
   local files = vim.tbl_map(function(suite)
     assert(vim.tbl_contains(available, suite), "Unknown suite: " .. suite)
     return root .. "/tests/spec/" .. suite .. ".lua"
   end, suites)
   local command_integration = vim.tbl_contains(suites, "commands_server")
-  if command_integration then
-    assert(
-      vim.env.VENUE_READER_TEST_SERVER and vim.env.VENUE_READER_TEST_SERVER ~= "",
-      "commands_server requires an explicit SERVER=/absolute/path/to/current/venue-reader"
-    )
-  end
   local dependencies = dofile(root .. "/scripts/dependencies.lua")
   dependencies.verify_tests()
   local environment = vim.fn.environ()

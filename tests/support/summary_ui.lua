@@ -2,6 +2,7 @@ local MiniTest = require("mini.test")
 local Lsp = require("tests.support.lsp")
 local Transport = require("tests.support.transport")
 local Plugin = require("venue-reader")
+local release = require("venue-reader.release")
 
 local equal = MiniTest.expect.equality
 local namespace = vim.api.nvim_create_namespace("venue-reader.summary")
@@ -48,7 +49,7 @@ local function fixture(mode, lines)
   rawset(vim, "system", function(command, options, callback)
     if command[1]:find("summary-test", 1, true) then
       vim.schedule(function()
-        options.stdout(nil, "venue-reader 0.1.0\n")
+        options.stdout(nil, "venue-reader " .. release.version .. "\n")
         callback({ code = 0 })
       end)
       return { kill = function() end }
@@ -68,7 +69,7 @@ local function fixture(mode, lines)
           codeLensProvider = {},
           executeCommandProvider = { commands = { "fix.describeOverrides" } },
         },
-        serverInfo = { name = "venue-reader", version = "0.1.0" },
+        serverInfo = { name = "venue-reader", version = release.version },
       })
     end)
     return rpc

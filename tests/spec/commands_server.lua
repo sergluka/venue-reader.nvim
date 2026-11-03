@@ -6,11 +6,6 @@ local equal = MiniTest.expect.equality
 local tests = MiniTest.new_set()
 local binary = assert(vim.env.VENUE_READER_TEST_SERVER)
 
-assert(
-  vim.env.VENUE_READER_TEST_RELEASE == "0",
-  "Use an explicit current server for commands_server"
-)
-
 local function setup(settings)
   local ready = {}
   local messages = {}

@@ -9,7 +9,7 @@ local function read(filename)
 end
 
 local manifest = vim.json.decode(read(root .. "/tests/dependencies.json"))
-manifest.server = vim.json.decode(read(root .. "/lua/venue-reader/release.json"))
+manifest.server = dofile(root .. "/lua/venue-reader/release.lua")
 Dependencies.version = manifest.server.version
 
 local function run(command)

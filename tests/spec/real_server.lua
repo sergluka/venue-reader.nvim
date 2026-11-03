@@ -1,5 +1,6 @@
 local MiniTest = require("mini.test")
 local Lsp = require("tests.support.lsp")
+local release = require("venue-reader.release")
 local equal = MiniTest.expect.equality
 local tests = MiniTest.new_set()
 
@@ -28,7 +29,7 @@ tests["released server opens and decodes an unsaved named buffer"] = function()
   Lsp.ready(client, buffer)
   equal("venue-reader", client.server_info.name)
   if vim.env.VENUE_READER_TEST_RELEASE == "1" then
-    equal("0.1.0", client.server_info.version)
+    equal(release.version, client.server_info.version)
   end
   Lsp.wait(function()
     return diagnostics ~= nil

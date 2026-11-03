@@ -34,7 +34,7 @@ make prepare
 ```
 
 Preparation clones the pinned mini.test release into `.test-deps/mini.test`.
-It also selects a platform archive for server v0.1.0, verifies its pinned
+It also selects a platform archive for the pinned server release, verifies its
 SHA-256 and stores the binary and notices in the ignored `.test-deps/` directory.
 It does not change PATH. Once mini.test is prepared, supply a release archive
 to prepare the server without downloading:
@@ -58,6 +58,7 @@ make test SUITE=highlights
 make test SUITE=selection
 make test SUITE=commands
 make test SUITE=yank
+make test SUITE=commands_server
 ```
 
 `transport`, `dependencies`, `selection`, `commands` and `yank` need no server
@@ -76,12 +77,12 @@ For local server development, pass an explicit override:
 make test SUITE=real_server SERVER=/absolute/path/to/venue-reader
 ```
 
-The command integration suite requires an explicit build supporting structured
-`fix.decode` and `fix.listDictionaries`; it is outside the default published-release
-test run:
+The default test run includes `commands_server`, checking decoded yank and
+server command helpers against the pinned published release. It can also run
+alone without a local binary override:
 
 ```sh
-make test SUITE=commands_server SERVER=/absolute/path/to/current/venue-reader
+make test SUITE=commands_server
 ```
 
 The runner labels overrides separately; their results are not release-artifact
@@ -110,9 +111,10 @@ require("venue-reader").setup()
 ```
 
 Discovery reuses a compatible explicit command, PATH executable or managed
-installation, in that order. Stable server versions `>=0.1.0,<0.2.0` are accepted.
+installation, in that order. Stable patch releases in the same major/minor series
+as the [pinned server](lua/venue-reader/release.json) are accepted.
 An invalid explicit command produces an error; it is never silently replaced.
-If none is found, the plugin asynchronously installs pinned v0.1.0 under
+If none is found, the plugin asynchronously installs that pinned release under
 `stdpath("data")/venue-reader/`, verifying SHA-256 before extraction. Compatible
 installations are reused without automatic upgrades or PATH changes.
 
@@ -172,13 +174,10 @@ Other clients' diagnostics/providers are preserved. No default mappings are adde
 
 ## Decoded yank and server commands
 
-Decoded yank requires the structured `fix.decode` contract: URI/ranges input and
-versioned, physical-row results. The dictionary chooser requires
-`fix.listDictionaries`. These contracts are implemented in the current server
-source and are absent from the pinned v0.1.0 release. Use `server.cmd` with a
-supporting build. Automatic installation remains pinned to v0.1.0; the plugin
-reports missing commands or unsupported results and does not upgrade or retry
-through an older interface.
+The pinned server provides structured `fix.decode` results and
+`fix.listDictionaries` for decoded yank and the dictionary chooser. Automatic
+installation supplies a supporting release. The plugin reports missing commands
+or unsupported results without retrying through a different interface.
 
 | Command | Result |
 | --- | --- |

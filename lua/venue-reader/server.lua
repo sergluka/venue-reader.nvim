@@ -1,12 +1,8 @@
 local Server = {}
 
-local manifest_path = vim.fs.dirname(debug.getinfo(1, "S").source:sub(2)) .. "/release.json"
-local file = assert(io.open(manifest_path, "rb"))
-local manifest = vim.json.decode(file:read("*a"))
+local manifest = require("venue-reader.release")
 local jobs = {}
 local current = { state = "idle" }
-
-file:close()
 
 local function run(command, callback, timeout)
   local stdout, stderr, size, process = {}, {}, 0
@@ -53,9 +49,11 @@ end
 local function probe(binary, callback)
   run({ binary, "--version" }, function(error, output)
     local version = output and output:match("^venue%-reader (%d+%.%d+%.%d+)%s*$")
-    local patch = version and version:match("^0%.1%.(%d+)$")
+    local series = version and version:match("^(%d+%.%d+)%.%d+$")
     callback(
-      error or (not patch and "Unsupported server version: " .. vim.trim(output or "")) or nil,
+      error
+        or (series ~= manifest.series and "Unsupported server version: " .. vim.trim(output or ""))
+        or nil,
       version
     )
   end, 5000)

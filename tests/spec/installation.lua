@@ -3,12 +3,22 @@ local Lsp = require("tests.support.lsp")
 local tests = MiniTest.new_set()
 
 local root = assert(vim.env.VENUE_READER_TEST_ROOT)
-local release_file = assert(io.open(root .. "/lua/venue-reader/release.json", "rb"))
-local manifest = vim.json.decode(release_file:read("*a"))
-
+local manifest = require("venue-reader.release")
 local equal = MiniTest.expect.equality
-
-release_file:close()
+local major, minor, patch = manifest.version:match("^(%d+)%.(%d+)%.(%d+)$")
+local compatible_patch = manifest.series .. "." .. (tonumber(patch) + 1)
+local other_minor = major .. "." .. (tonumber(minor) + 1) .. ".0"
+local unsupported_versions = {
+  manifest.version .. "-rc.1",
+  other_minor,
+  (tonumber(major) + 1) .. ".0.0",
+  "broken",
+}
+if tonumber(minor) > 0 then
+  table.insert(unsupported_versions, major .. "." .. (tonumber(minor) - 1) .. ".0")
+elseif tonumber(major) > 0 then
+  table.insert(unsupported_versions, (tonumber(major) - 1) .. ".0.0")
+end
 
 local function isolated(handler)
   local directory = vim.fn.tempname()
@@ -64,7 +74,7 @@ tests["explicit command preserves argv and coalesces probes"] = function()
   local server = isolated(function(command)
     equal(command, { "wrapper", "--version" })
     probes = probes + 1
-    return nil, "venue-reader 0.1.4\n"
+    return nil, "venue-reader " .. compatible_patch .. "\n"
   end)
   local answers = {}
   local options = { cmd = { "wrapper", "--stdio", "custom" } }
@@ -78,11 +88,11 @@ tests["explicit command preserves argv and coalesces probes"] = function()
   end, "coalesced probes")
   equal(probes, 1)
   equal(answers[1].argv, options.cmd)
-  equal(answers[2].version, "0.1.4")
+  equal(answers[2].version, compatible_patch)
   equal(answers[1].error, nil)
 end
 
-for _, version in ipairs({ "0.1.0-rc.1", "0.2.0", "1.0.0", "broken" }) do
+for _, version in ipairs(unsupported_versions) do
   tests["unsupported explicit version " .. version .. " fails until explicit retry"] = function()
     local probes = 0
     local server = isolated(function()
@@ -95,6 +105,24 @@ for _, version in ipairs({ "0.1.0-rc.1", "0.2.0", "1.0.0", "broken" }) do
     assert(resolve(server, { cmd = { "wrapper" } }, true).error)
     equal(probes, 2)
   end
+end
+
+tests["compatible PATH server is reused without installation"] = function()
+  local probes = 0
+  local server = isolated(function(command)
+    equal(command, { "/existing/venue-reader", "--version" })
+    probes = probes + 1
+    return nil, "venue-reader " .. manifest.version .. "\n"
+  end)
+  local exepath = vim.fn.exepath
+  rawset(vim.fn, "exepath", function(name)
+    return name == "venue-reader" and "/existing/venue-reader" or exepath(name)
+  end)
+  local result = resolve(server, {})
+  equal(result.error, nil)
+  equal(result.argv, { "/existing/venue-reader", "--stdio" })
+  equal(result.version, manifest.version)
+  equal(probes, 1)
 end
 
 tests["manual mode with no installed binary never starts a subprocess"] = function()
@@ -194,7 +222,7 @@ end
 tests["incompatible PATH candidate falls back to compatible managed installation"] = function()
   local server, _, downloads = archive_fixture(false, function(command)
     if command[1] == "/unsupported/venue-reader" then
-      return nil, "venue-reader 0.2.0\n"
+      return nil, "venue-reader " .. other_minor .. "\n"
     end
   end)
   local installed = resolve(server, {})
@@ -207,7 +235,7 @@ tests["incompatible PATH candidate falls back to compatible managed installation
   equal(reused.error, nil)
   equal(reused.argv, installed.argv)
   equal(downloads(), 1)
-  assert(server.status().reason:find("0.2.0", 1, true))
+  assert(server.status().reason:find(other_minor, 1, true))
 end
 
 tests["publication loser reuses winner and preserves its files"] = function()
