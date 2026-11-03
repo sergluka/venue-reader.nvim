@@ -1,8 +1,10 @@
 local M = {}
 
+local Commands = require("venue-reader.commands")
 local Highlights = require("venue-reader.highlights")
 local Server = require("venue-reader.server")
 local Summaries = require("venue-reader.summaries")
+local Yank = require("venue-reader.yank")
 
 local options
 local ready
@@ -11,6 +13,7 @@ local lifetimes = {}
 local owner_marker = tostring(M)
 local defaults = {
   server = { auto_install = true },
+  commands = { timeout_ms = 5000 },
   settings = { fix = vim.empty_dict() },
   summary = { mode = "front", highlight = "VenueReaderSummary" },
 }
@@ -34,6 +37,82 @@ end
 local function root(buffer)
   local directory = vim.fs.dirname(vim.api.nvim_buf_get_name(buffer))
   return vim.fs.root(directory, ".venue-reader.toml") or directory
+end
+
+local function context_root(buffer)
+  if eligible(buffer) then
+    return root(buffer)
+  end
+  local directory = vim.fn.getcwd()
+  return vim.fs.root(directory, ".venue-reader.toml") or directory
+end
+
+local function selected_client(buffer)
+  for _, client in ipairs(vim.lsp.get_clients({ name = "venue_reader", bufnr = buffer })) do
+    if managed(client) and not client:is_stopped() then
+      return client
+    end
+  end
+  local directory = context_root(buffer)
+  for _, client in ipairs(vim.lsp.get_clients({ name = "venue_reader" })) do
+    if managed(client) and not client:is_stopped() and client.config.root_dir == directory then
+      return client
+    end
+  end
+end
+
+local function acquire(buffer, document_required, callback)
+  if not vim.api.nvim_buf_is_valid(buffer) then
+    callback("The command buffer is no longer available")
+    return
+  end
+  local directory, captured = context_root(buffer), generation
+  local function current()
+    return generation == captured
+      and vim.api.nvim_buf_is_valid(buffer)
+      and context_root(buffer) == directory
+  end
+  local client = selected_client(buffer)
+  if document_required then
+    if not eligible(buffer) or not client or not vim.lsp.buf_is_attached(buffer, client.id) then
+      callback("Open a named FIX buffer and wait for its native LSP attachment")
+    else
+      callback(nil, client, current)
+    end
+    return
+  end
+  if client then
+    callback(nil, client, current)
+    return
+  end
+  Server.resolve(options.server, function(err, argv, version)
+    if not current() then
+      callback("Command context changed during server discovery")
+      return
+    end
+    if err then
+      callback(err)
+      return
+    end
+    ready = { argv = argv, version = version }
+    local config = vim.deepcopy(vim.lsp.config.venue_reader)
+    config.root_dir = directory
+    local client_id = vim.lsp.start(config, {
+      bufnr = buffer,
+      attach = false,
+      reuse_client = function(existing, candidate)
+        return managed(existing)
+          and not existing:is_stopped()
+          and existing.name == candidate.name
+          and existing.config.root_dir == candidate.root_dir
+      end,
+    })
+    if not client_id then
+      callback("Native LSP startup failed")
+      return
+    end
+    callback(nil, vim.lsp.get_client_by_id(client_id), current)
+  end)
 end
 
 local function activate(buffer)
@@ -76,8 +155,7 @@ end
 
 function M.status(buffer)
   buffer = buffer or vim.api.nvim_get_current_buf()
-  local clients = vim.lsp.get_clients({ name = "venue_reader", bufnr = buffer })
-  local client = clients[1]
+  local client = selected_client(buffer)
   return {
     enabled = vim.lsp.is_enabled("venue_reader"),
     session = client and {
@@ -120,6 +198,26 @@ function M.summary(mode)
   end
 end
 
+function M.yank(value)
+  return Yank.run(value)
+end
+
+function M.operator()
+  return Yank.operator()
+end
+
+function M.dictionary(name)
+  return Commands.dictionary(name)
+end
+
+function M.settings()
+  return Commands.settings()
+end
+
+function M.tag(number, value)
+  return Commands.tag(number, value)
+end
+
 local function settings(value)
   local result = vim.deepcopy(value)
   if next(result.fix or {}) == nil then
@@ -133,6 +231,12 @@ function M.setup(value)
   value = value or {}
   local candidate = vim.tbl_deep_extend("force", vim.deepcopy(defaults), value)
   assert(type(candidate.server.auto_install) == "boolean", "server.auto_install must be boolean")
+  assert(type(candidate.commands) == "table", "commands must be a table")
+  local timeout = candidate.commands.timeout_ms
+  assert(
+    type(timeout) == "number" and timeout > 0 and timeout < math.huge and timeout % 1 == 0,
+    "commands.timeout_ms must be a finite positive integer"
+  )
   if candidate.server.cmd then
     assert(
       vim.islist(candidate.server.cmd) and #candidate.server.cmd > 0,
@@ -148,6 +252,7 @@ function M.setup(value)
   local changed = options and not vim.deep_equal(options.settings, candidate.settings)
   generation = generation + 1
   options = candidate
+  Commands.setup(options.commands, acquire, managed)
   if changed then
     for _, client in ipairs(vim.lsp.get_clients({ name = "venue_reader" })) do
       if managed(client) then
@@ -172,8 +277,20 @@ function M.setup(value)
     filetypes = { "fix" },
     settings = options.settings,
     exit_timeout = 1000,
-    handlers = { ["textDocument/inlayHint"] = Summaries.handler },
+    before_init = Commands.before_init,
+    handlers = {
+      ["textDocument/inlayHint"] = Summaries.handler,
+      ["workspace/configuration"] = Commands.configuration,
+    },
+    on_exit = function(_, _, client_id)
+      Commands.closed(client_id)
+    end,
     on_init = function(client)
+      if not vim.deep_equal(client.settings, options.settings) then
+        client.settings = vim.deepcopy(options.settings)
+        client.config.settings = vim.deepcopy(options.settings)
+        client:notify("workspace/didChangeConfiguration", { settings = client.settings })
+      end
       vim.lsp.codelens.enable(options.summary.mode == "codelens", { client_id = client.id })
     end,
     root_dir = function(buffer, on_dir)
@@ -232,21 +349,64 @@ function M.setup(value)
       lifetimes[event.buf] = nil
     end,
   })
+  vim.keymap.set("n", "<Plug>(VenueReaderYank)", M.operator, {
+    expr = true,
+    desc = "Decode a FIX selection to a register",
+  })
+  vim.keymap.set(
+    "x",
+    "<Plug>(VenueReaderYank)",
+    "<Cmd>lua require('venue-reader').yank({ mode = 'visual', mapping = true })<CR>",
+    { desc = "Decode the FIX selection to a register" }
+  )
   vim.api.nvim_create_user_command("VenueReader", function(command)
-    local action = command.fargs[1]
-    if action == "status" then
-      notify(vim.inspect(M.status()))
-    elseif action == "summary" then
-      M.summary(command.fargs[2])
-    elseif action == "install" and command.fargs[2] == "server" then
-      M.install()
-    elseif action == "start" or action == "stop" or action == "restart" then
-      M[action]()
-    else
-      notify("Use start, stop, restart, status or install server", vim.log.levels.ERROR)
+    local success, failure = pcall(function()
+      local arguments = command.fargs
+      local action = arguments[1]
+      assert(action == "yank" or command.range == 0, "Only yank accepts a line range")
+      if action == "yank" then
+        assert(#arguments <= 2, "Use yank [register]")
+        local selection = { register = arguments[2] }
+        if command.range > 0 then
+          selection.mode, selection.first, selection.last = "line", command.line1, command.line2
+        end
+        M.yank(selection)
+      elseif action == "dictionary" then
+        assert(#arguments <= 2, "Use dictionary [name]")
+        M.dictionary(arguments[2])
+      elseif action == "tag" then
+        assert(#arguments >= 2 and #arguments <= 3, "Use tag <number> [value]")
+        M.tag(arguments[2], arguments[3])
+      elseif action == "summary" then
+        assert(#arguments == 2, "Use summary front|above|codelens|off")
+        M.summary(arguments[2])
+      elseif action == "install" then
+        assert(#arguments == 2 and arguments[2] == "server", "Use install server")
+        M.install()
+      elseif action == "status" then
+        assert(#arguments == 1, "Use status")
+        notify(vim.inspect(M.status()))
+      elseif
+        action == "start"
+        or action == "stop"
+        or action == "restart"
+        or action == "settings"
+      then
+        assert(#arguments == 1, action .. " takes no arguments")
+        M[action]()
+      else
+        error(
+          "Use start, stop, restart, status, summary, yank, dictionary, settings, tag"
+            .. " or install server"
+        )
+      end
+    end)
+    if not success then
+      notify(tostring(failure), vim.log.levels.ERROR)
     end
   end, {
     nargs = "+",
+    range = true,
     force = true,
     complete = function()
       return {
@@ -259,6 +419,10 @@ function M.setup(value)
         "summary above",
         "summary codelens",
         "summary off",
+        "yank",
+        "dictionary",
+        "settings",
+        "tag",
       }
     end,
   })

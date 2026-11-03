@@ -9,7 +9,8 @@ Server discovery, installation and LSP lifecycle are available. Native hover,
 diagnostics, code actions, links, selections and document symbols use Neovim's
 standard LSP interfaces. Front/above summary rendering and native CodeLens are
 available. Native field hints and semantic highlight defaults are included.
-Decoded yank and optional grammar management are still TODO.
+Decoded yank and server command helpers are included. Optional grammar management
+is still TODO.
 
 ## Development
 
@@ -54,10 +55,13 @@ make test SUITE=lifecycle
 make test SUITE=installation
 make test SUITE=summaries
 make test SUITE=highlights
+make test SUITE=selection
+make test SUITE=commands
+make test SUITE=yank
 ```
 
-`transport` and `dependencies` need no server binary; `make prepare-tests` prepares
-mini.test alone. The installation suite needs the prepared Linux release archive
+`transport`, `dependencies`, `selection`, `commands` and `yank` need no server
+binary; `make prepare-tests` prepares mini.test alone. The installation suite needs the prepared Linux release archive
 for its offline fixtures. Normal tests verify the framework revision and never
 download from the network.
 Tests isolate Neovim configuration, data, state and working directory in a
@@ -70,6 +74,14 @@ For local server development, pass an explicit override:
 
 ```sh
 make test SUITE=real_server SERVER=/absolute/path/to/venue-reader
+```
+
+The command integration suite requires an explicit build supporting structured
+`fix.decode` and `fix.listDictionaries`; it is outside the default published-release
+test run:
+
+```sh
+make test SUITE=commands_server SERVER=/absolute/path/to/current/venue-reader
 ```
 
 The runner labels overrides separately; their results are not release-artifact
@@ -121,6 +133,7 @@ require("venue-reader").setup({
     auto_install = false,
   },
   summary = { mode = "front", highlight = "VenueReaderSummary" },
+  commands = { timeout_ms = 5000 },
   settings = { fix = {} },
 })
 ```
@@ -156,6 +169,92 @@ prevent future automatic attachment, and `:lsp enable venue_reader` to resume.
 After a crash, native Neovim reports the exit; enable attaches eligible buffers
 again. There is no separate plugin suppression or automatic recovery loop.
 Other clients' diagnostics/providers are preserved. No default mappings are added.
+
+## Decoded yank and server commands
+
+Decoded yank requires the structured `fix.decode` contract: URI/ranges input and
+versioned, physical-row results. The dictionary chooser requires
+`fix.listDictionaries`. These contracts are implemented in the current server
+source and are absent from the pinned v0.1.0 release. Use `server.cmd` with a
+supporting build. Automatic installation remains pinned to v0.1.0; the plugin
+reports missing commands or unsupported results and does not upgrade or retry
+through an older interface.
+
+| Command | Result |
+| --- | --- |
+| `:VenueReader yank [register]` | Decode the cursor field into a text register |
+| `:10,20VenueReader yank a` | Decode the inclusive line range into register `a` |
+| `:VenueReader dictionary` | Choose from server-supplied names and labels using `vim.ui.select` |
+| `:VenueReader dictionary FIX.4.4` | Select that dictionary for the server session |
+| `:VenueReader settings` | Native floating preview of committed effective settings, sources and warnings |
+| `:VenueReader tag 35` | Native Markdown preview for `MsgType(35)` |
+| `:VenueReader tag 54 1` | Tag/value reference for `Side(54) = 1` |
+
+Only yank accepts an Ex range. Tag numbers are positive decimal u32 integers;
+optional values remain strings. Ex arguments use normal escaped spaces.
+Settings are a one-shot committed snapshot. Dictionary selection is session-wide;
+project/modeline overrides retain precedence. A chooser submits the selected name
+against the server's current registry, which may have changed while the UI was open.
+
+Yank/settings require a named FIX buffer with its native client attached and its
+server configuration ready. Tag/dictionary also work without a FIX document:
+they reuse the current owned client or a session matching cwd's nearest
+`.venue-reader.toml` root, otherwise cwd. A new session starts unattached through
+native LSP and can be reused by later FIX buffers. These commands do not change an
+unrelated buffer's filetype. Native stop/restart also manage these sessions.
+Configuration-not-ready errors are reported without polling; invoke the command
+again after configuration completes.
+
+Optional mappings use the plugin's normal/Visual `<Plug>(VenueReaderYank)`:
+
+```lua
+vim.keymap.set({ "n", "x" }, "<leader>y", "<Plug>(VenueReaderYank)")
+```
+
+In Normal mode it is a native `g@` operator: motions, text objects, counts and
+repeat use Neovim. In Visual mode it captures characterwise, linewise or blockwise
+geometry before leaving Visual mode. The server decodes fields intersecting the
+selection. Source text, cursor and view remain intact. Block output preserves each
+source row, including empty rows, and uses the decoded text's native register
+width. Virtual padding adds no source bytes. Server limits apply to the entire
+selection; blockwise performs one cap lookup before constructing row ranges and
+sends one batched decode request. There is no request splitting or local FIX parsing.
+
+Without a register argument, yank writes register `0`, makes it unnamed, and
+mirrors to `+` for `clipboard=unnamedplus` and `*` for `clipboard=unnamed` (both
+when configured). Explicit command/Lua registers use only that destination;
+uppercase named registers append natively and leave register `0` unchanged.
+Read-only/search/expression destinations are rejected; `_` discards the operation.
+Paste normally with `p`/`P`, including into a new buffer.
+
+Mappings capture `v:register`. Unnamed or the clipboard-implied default (`+` for
+unnamedplus, otherwise `*` for unnamed) follows the default policy above.
+Neovim does not expose whether that value came from an explicit prefix; use
+`:VenueReader yank +` or `yank({ register = "+" })` for an exact clipboard-only
+write. Other mapping register prefixes remain explicit.
+
+Late answers after edits, rename, detach, configuration changes, changed internal
+target registers or a newer yank are discarded. An external clipboard change
+alone does not cancel the requested write. Errors, malformed answers and all-empty
+results leave registers unchanged before commit. Clipboard writes use the native
+provider; failures can partially succeed and some providers only emit warnings.
+The plugin does not claim atomic clipboard updates.
+
+`commands.timeout_ms` is a finite positive integer (default 5000). The deadline
+starts after client acquisition and covers bootstrap plus requests, excluding
+binary discovery/installation and time spent choosing in `vim.ui.select`.
+Timeouts cancel native outstanding requests; late answers do not write registers
+or open previews.
+
+Equivalent Lua helpers:
+
+```lua
+local venue = require("venue-reader")
+venue.yank() -- Cursor field; or { mode = "line", first = 10, last = 20, register = "a" }
+venue.dictionary() -- Or an exact name
+venue.settings()
+venue.tag(54, "1")
+```
 
 ## Summary modes
 
@@ -308,7 +407,7 @@ Full/delta semantic responses cover the server's bounded prefix
 (`limits.semanticTokensFullLines`, default 2000 lines); the plugin does not fetch
 additional ranges to extend it.
 
-## Tree-sitter and command adapters
+## Tree-sitter
 
-TODO: Optional grammar installation, syntax/textobjects and decoded yank.
+TODO: Optional grammar installation and syntax/textobjects.
 Tree-sitter is not required for server startup or lifecycle commands.

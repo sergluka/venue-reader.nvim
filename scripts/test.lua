@@ -11,18 +11,32 @@ local success, result = pcall(function()
     "installation",
     "summaries",
     "highlights",
+    "selection",
+    "commands",
+    "yank",
+    "commands_server",
   }
+  local default_suites = vim.tbl_filter(function(suite)
+    return suite ~= "commands_server"
+  end, available)
   local suites = #arg > 0 and vim.list_slice(arg)
     or (
       vim.env.VENUE_READER_TEST_SUITE ~= nil
         and vim.env.VENUE_READER_TEST_SUITE ~= ""
         and { vim.env.VENUE_READER_TEST_SUITE }
-      or available
+      or default_suites
     )
   local files = vim.tbl_map(function(suite)
     assert(vim.tbl_contains(available, suite), "Unknown suite: " .. suite)
     return root .. "/tests/spec/" .. suite .. ".lua"
   end, suites)
+  local command_integration = vim.tbl_contains(suites, "commands_server")
+  if command_integration then
+    assert(
+      vim.env.VENUE_READER_TEST_SERVER and vim.env.VENUE_READER_TEST_SERVER ~= "",
+      "commands_server requires an explicit SERVER=/absolute/path/to/current/venue-reader"
+    )
+  end
   local dependencies = dofile(root .. "/scripts/dependencies.lua")
   dependencies.verify_tests()
   local environment = vim.fn.environ()
@@ -50,6 +64,7 @@ local success, result = pcall(function()
     vim.tbl_contains(suites, "real_server")
     or vim.tbl_contains(suites, "lifecycle")
     or vim.tbl_contains(suites, "highlights")
+    or command_integration
   then
     local binary = vim.env.VENUE_READER_TEST_SERVER
     local override = binary ~= nil and binary ~= ""

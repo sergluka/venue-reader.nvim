@@ -1,6 +1,7 @@
 local MiniTest = require("mini.test")
 local Lsp = require("tests.support.lsp")
 local Plugin = require("venue-reader")
+
 local tests = MiniTest.new_set()
 local equal = MiniTest.expect.equality
 local ready_documents = {}
@@ -405,4 +406,47 @@ tests["native restart retains buffers and leaves unrelated clients alone"] = fun
   equal(client(first).id, client(second).id)
   assert(vim.lsp.buf_is_attached(first, unrelated.id))
 end
+
+tests["setup during cold initialization updates the eventual native client"] = function()
+  local Transport = require("tests.support.transport")
+  local transport = Transport.new()
+  local original = vim.lsp.rpc.start
+  rawset(vim.lsp.rpc, "start", function(_, dispatchers)
+    return transport.command(dispatchers)
+  end)
+  MiniTest.finally(function()
+    rawset(vim.lsp.rpc, "start", original)
+    if transport.dispatchers then
+      transport:exit(0, 0)
+    end
+  end)
+  setup()
+  local buffer = vim.api.nvim_create_buf(true, false)
+  vim.api.nvim_set_current_buf(buffer)
+  MiniTest.finally(function()
+    vim.api.nvim_buf_delete(buffer, { force = true })
+  end)
+  Plugin.tag(35)
+  Lsp.wait(function()
+    return transport.pending[1] ~= nil
+  end, "cold initialize")
+  configure({
+    summary = { mode = "off" },
+    server = { cmd = { vim.env.VENUE_READER_TEST_SERVER, "--stdio" } },
+    settings = { fix = { limits = { rangeLines = 19 } } },
+  })
+  transport:initialize()
+  local active
+  Lsp.wait(function()
+    active = vim.lsp.get_clients({ name = "venue_reader" })[1]
+    return active ~= nil
+  end, "cold client initialization")
+  equal(active.settings.fix.limits.rangeLines, 19)
+  equal(active.config.settings.fix.limits.rangeLines, 19)
+  local response = transport.dispatchers.server_request("workspace/configuration", {
+    items = { { section = "fix" } },
+  })
+  equal(response, { active.settings.fix })
+end
+
 return tests
