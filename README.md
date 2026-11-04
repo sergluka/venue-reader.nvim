@@ -12,122 +12,52 @@ available. Native field hints and semantic highlight defaults are included.
 Decoded yank and server command helpers are included. Optional Tree-sitter adds
 base highlighting, SOH conceal and structural textobjects.
 
-## Development
-
-The headless tests use [mini.test](https://github.com/nvim-mini/mini.test) and
-Neovim's built-in LSP client, including the plugin lifecycle.
-The real-server suite checks a named, unsaved FIX buffer against the published
-Venue Reader binary. The transport suite controls responses explicitly to test
-ordering, cancellation, startup failure and server exit.
-
-Use Neovim 0.12+, Make, Git, StyLua and Luacheck. Preparing the parser also needs
-the Tree-sitter CLI and a C compiler. Preparation uses `curl` and `tar`
-(`unzip` for Windows archives). Tested tool versions and pinned server release
-identifiers are recorded in [tests/dependencies.json](tests/dependencies.json) and
-[lua/venue-reader/release.json](lua/venue-reader/release.json); the grammar pin is
-in [lua/venue-reader/grammar.json](lua/venue-reader/grammar.json).
-Python is not required. mini.test is a development-only dependency, pinned to
-v0.18.0 commit `35c67cb7f2dc697ed0c7c06400fcf29a8a521d7d`.
-
-From this repository, prepare the test dependencies and pinned server once:
-
-```sh
-make prepare
-```
-
-Preparation clones pinned mini.test, nvim-treesitter, textobjects and grammar
-sources into `.test-deps/`, then builds an isolated FIX parser from the generated
-C sources. It records the grammar revision, CLI version and parser checksum.
-It also selects a platform archive for the pinned server release, verifies its
-SHA-256 and stores the binary and notices in the ignored `.test-deps/` directory.
-It does not change PATH. Once test dependencies are prepared, supply a release archive
-to prepare the server without downloading:
-
-```sh
-make prepare ARCHIVE=/path/to/venue-reader-x86_64-unknown-linux-gnu.tar.gz
-```
-
-After preparation, checks and tests run without network access:
-
-```sh
-make lint
-make test
-make test SUITE=real_server
-make test SUITE=transport
-make test SUITE=dependencies
-make test SUITE=lifecycle
-make test SUITE=installation
-make test SUITE=summaries
-make test SUITE=highlights
-make test SUITE=selection
-make test SUITE=commands
-make test SUITE=yank
-make test SUITE=commands_server
-make test SUITE=treesitter
-make test SUITE=acceptance
-```
-
-`transport`, `dependencies`, `selection`, `commands` and `yank` need no server
-binary; `make prepare-tests` prepares the framework, optional plugin checkouts
-and compiled parser without the server. The installation suite needs the prepared
-Linux release archive for its offline fixtures. Normal tests verify dependency
-revisions and parser integrity; they never download or compile.
-Tests isolate Neovim configuration, data, state and working directory in a
-temporary directory. mini.test runs the cases, reports results and returns a
-nonzero exit status on failure. Its finalizers clean up clients and buffers.
-The startup-failure case
-intentionally produces a server-exit warning with code 7.
-
-For local server development, pass an explicit override:
-
-```sh
-make test SUITE=real_server SERVER=/absolute/path/to/venue-reader
-```
-
-The default test run includes `commands_server`, checking decoded yank and
-server command helpers against the pinned published release. It can also run
-alone without a local binary override:
-
-```sh
-make test SUITE=commands_server
-```
-
-The runner labels overrides separately; their results are not release-artifact
-evidence. `make test NVIM=/path/to/nvim` selects another Neovim executable. The prepared
-release archive and extracted binary are rechecked before release tests.
-
-A separate opt-in smoke downloads and builds the grammar in isolated XDG
-directories, using only the prepared manager and a supplied lazy.nvim checkout:
-
-```sh
-make smoke-grammar LAZY=/absolute/path/to/lazy.nvim
-```
-
-It checks dependency load order and explicit retry after late manager loading,
-with a separate timeout. Evidence is saved in `.test-deps/grammar-smoke.json`.
-It does not load personal configuration or modify personal parsers.
-
-Format changed files with `make format`. The Makefile only coordinates standard
-commands; tests can also be launched directly:
-
-```sh
-nvim --headless -u NONE -i NONE -l scripts/test.lua transport
-nvim --headless -u NONE -i NONE -l scripts/prepare.lua /path/to/release-archive.tar.gz
-```
-
-Local validation covers Linux x86_64 with Neovim 0.12.0 and 0.12.5. The manifest
-also identifies macOS and Windows artifacts; native tests on those platforms
-remain outstanding. See [integration acceptance](tests/ACCEPTANCE.md) for
-commands and explicitly unexecuted platform placeholders.
-
 ## Installation
 
-Add this repository to your plugin manager, then call setup. No other Neovim
-plugin is required. Server discovery starts when a named FIX buffer is opened.
+Choose one installation method.
+
+### LazyVim
+
+Create `lua/plugins/venue-reader.lua` in your Neovim configuration directory.
+LazyVim loads this spec automatically and calls setup through `opts`:
 
 ```lua
+-- lua/plugins/venue-reader.lua
+return {
+  {
+    "sergluka/venue-reader.nvim",
+    dependencies = { -- optional
+      { "nvim-treesitter/nvim-treesitter", branch = "main" },
+      { "nvim-treesitter/nvim-treesitter-textobjects", branch = "main" },
+    },
+    opts = {},
+  },
+}
+```
+
+The optional dependencies use Tree-sitter `main` APIs; ensure your LazyVim
+configuration uses those APIs. The inner spec also works in a standalone
+lazy.nvim configuration.
+
+### Native Neovim package manager
+
+Add this to `init.lua` to install through the built-in `vim.pack` manager:
+
+```lua
+-- init.lua
+vim.pack.add({
+  {
+    src = "https://github.com/sergluka/venue-reader.nvim",
+  },
+})
 require("venue-reader").setup()
 ```
+
+Use `:lua vim.pack.update({ "venue-reader.nvim" })` to update the package.
+
+No other Neovim plugin is required. Server discovery starts when a named FIX
+buffer is opened. Built-in help is available with `:help venue-reader`; the
+[help reference](doc/venue-reader.txt) covers commands, options and Lua helpers.
 
 Discovery reuses a compatible explicit command, PATH executable or managed
 installation, in that order. Stable patch releases in the same major/minor series
@@ -155,15 +85,20 @@ require("venue-reader").setup({
   },
   summary = { mode = "front", highlight = "VenueReaderSummary" },
   commands = { timeout_ms = 5000 },
-  treesitter = { enabled = true, auto_install = true },
+  treesitter = { enabled = false },
   settings = { fix = {} },
 })
 ```
 
 `server.cmd` is an argv list, without shell parsing. Its executable must support
-`--version`. Repeated setup is safe; settings update live, while executable
-changes require `:VenueReader restart`. Server settings retain project/modeline
-precedence. Empty `settings.fix` is sent as a JSON object.
+`--version`. This example disables optional Tree-sitter; LSP features remain
+available. Omit that option to allow compatible parser reuse and automatic grammar
+installation when its optional manager is available. Repeated setup is safe;
+settings update live, while executable changes require `:VenueReader restart`.
+Server settings retain project/modeline precedence. Empty `settings.fix` is sent
+as a JSON object. See the server's
+[configuration reference](https://github.com/sergluka/venue-reader/wiki/Configuration-Reference)
+for settings passed through `settings.fix`.
 
 ## Usage
 
@@ -438,8 +373,7 @@ normal priority over the syntax layer.
 A compatible installed FIX parser is reused without a manager or download.
 Compatibility is checked by native parser loading and the effective highlights
 query. Textobject queries are loaded on selection; their errors do not disable
-base highlighting. If the
-parser is missing, the plugin can install the [pinned grammar](lua/venue-reader/grammar.json)
+base highlighting. If the parser is missing, the plugin can install the [pinned grammar](lua/venue-reader/grammar.json)
 asynchronously through nvim-treesitter **main**. Its Tree-sitter CLI, C compiler,
 `curl` and `tar` requirements apply; see the manager's installation instructions.
 The plugin preserves existing parser recipes and the manager's install directory.
@@ -457,27 +391,13 @@ For lazy.nvim, optional dependencies can be loaded before setup as follows:
 ```lua
 {
   "sergluka/venue-reader.nvim",
-  main = "venue-reader",
   dependencies = {
-    {
-      "nvim-treesitter/nvim-treesitter",
-      branch = "main",
-      opts = function()
-        local install_dir = vim.fn.stdpath("data") .. "/site"
-        vim.fn.mkdir(install_dir, "p")
-        return { install_dir = install_dir }
-      end,
-    },
+    { "nvim-treesitter/nvim-treesitter", branch = "main" },
     { "nvim-treesitter/nvim-treesitter-textobjects", branch = "main" },
   },
   opts = {},
 }
 ```
-
-Creating the install directory before loading the dependencies keeps Lazy from
-removing a nonexistent directory from runtimepath on first use. If the manager
-is already configured, keep its chosen install directory and ensure it is on
-runtimepath.
 
 The manager is needed only for installation; textobjects is needed only for
 selection helpers. Neither plugin is bootstrapped automatically. If the manager
@@ -600,3 +520,111 @@ The guard respects the plugin's predicate and buffer opt-out, and skips movement
 until a parser is available. These motions can parse/search the whole syntax
 tree, so apply your large-file policy. Native LSP document symbols remain
 available for navigating the server's message outline.
+
+## Development
+
+The headless tests use [mini.test](https://github.com/nvim-mini/mini.test) and
+Neovim's built-in LSP client, including the plugin lifecycle.
+The real-server suite checks a named, unsaved FIX buffer against the published
+Venue Reader binary. The transport suite controls responses explicitly to test
+ordering, cancellation, startup failure and server exit.
+
+Use Neovim 0.12+, Make, Git, StyLua and Luacheck. Preparing the parser also needs
+the Tree-sitter CLI and a C compiler. Preparation uses `curl` and `tar`
+(`unzip` for Windows archives). Tested tool versions and pinned server release
+identifiers are recorded in [tests/dependencies.json](tests/dependencies.json) and
+[lua/venue-reader/release.json](lua/venue-reader/release.json); the grammar pin is
+in [lua/venue-reader/grammar.json](lua/venue-reader/grammar.json).
+Python is not required. mini.test is a development-only dependency; its exact
+revision is recorded in the test dependency manifest.
+
+From this repository, prepare the test dependencies and pinned server once:
+
+```sh
+make prepare
+```
+
+Preparation clones pinned mini.test, nvim-treesitter, textobjects and grammar
+sources into `.test-deps/`, then builds an isolated FIX parser from the generated
+C sources. It records the grammar revision, CLI version and parser checksum.
+It also selects a platform archive for the pinned server release, verifies its
+SHA-256 and stores the binary and notices in the ignored `.test-deps/` directory.
+It does not change PATH. Once test dependencies are prepared, supply a release archive
+to prepare the server without downloading:
+
+```sh
+make prepare ARCHIVE=/path/to/venue-reader-x86_64-unknown-linux-gnu.tar.gz
+```
+
+After preparation, checks and tests run without network access:
+
+```sh
+make lint
+make test
+make test SUITE=real_server
+make test SUITE=transport
+make test SUITE=dependencies
+make test SUITE=lifecycle
+make test SUITE=installation
+make test SUITE=summaries
+make test SUITE=highlights
+make test SUITE=selection
+make test SUITE=commands
+make test SUITE=yank
+make test SUITE=commands_server
+make test SUITE=treesitter
+make test SUITE=acceptance
+```
+
+`transport`, `dependencies`, `selection`, `commands` and `yank` need no server
+binary; `make prepare-tests` prepares the framework, optional plugin checkouts
+and compiled parser without the server. The installation suite needs the prepared
+Linux release archive for its offline fixtures. Normal tests verify dependency
+revisions and parser integrity; they never download or compile.
+Tests isolate Neovim configuration, data, state and working directory in a
+temporary directory. mini.test runs the cases, reports results and returns a
+nonzero exit status on failure. Its finalizers clean up clients and buffers.
+The startup-failure case
+intentionally produces a server-exit warning with code 7.
+
+For local server development, pass an explicit override:
+
+```sh
+make test SUITE=real_server SERVER=/absolute/path/to/venue-reader
+```
+
+The default test run includes `commands_server`, checking decoded yank and
+server command helpers against the pinned published release. It can also run
+alone without a local binary override:
+
+```sh
+make test SUITE=commands_server
+```
+
+The runner labels overrides separately; their results are not release-artifact
+evidence. `make test NVIM=/path/to/nvim` selects another Neovim executable. The prepared
+release archive and extracted binary are rechecked before release tests.
+
+A separate opt-in smoke downloads and builds the grammar in isolated XDG
+directories, using only the prepared manager and a supplied lazy.nvim checkout:
+
+```sh
+make smoke-grammar LAZY=/absolute/path/to/lazy.nvim
+```
+
+It checks dependency load order and explicit retry after late manager loading,
+with a separate timeout. Evidence is saved in `.test-deps/grammar-smoke.json`.
+It does not load personal configuration or modify personal parsers.
+
+Format changed files with `make format`. The Makefile only coordinates standard
+commands; tests can also be launched directly:
+
+```sh
+nvim --headless -u NONE -i NONE -l scripts/test.lua transport
+nvim --headless -u NONE -i NONE -l scripts/prepare.lua /path/to/release-archive.tar.gz
+```
+
+Local validation covers Linux x86_64 with Neovim 0.12.0 and 0.12.5. The manifest
+also identifies macOS and Windows artifacts; native tests on those platforms
+remain outstanding. See [integration acceptance](tests/ACCEPTANCE.md) for
+commands and explicitly unexecuted platform placeholders.
