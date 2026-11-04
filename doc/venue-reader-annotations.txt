@@ -1,0 +1,176 @@
+*venue-reader-annotations.txt*  Summaries, field hints and semantic styles
+
+Annotations ~
+
+Index: |venue-reader|    Configuration: |venue-reader-options|
+Wiki: https://github.com/sergluka/venue-reader.nvim/wiki/Summaries
+
+==============================================================================
+Summary modes                                            *venue-reader-modes*
+
+The server generates the same summary text/details for each channel. The mode
+changes placement and styling. Only one summary backend is active at a time.
+
+    Mode       Placement                  Styling/limits
+    front      Before raw message         VenueReaderSummary; inlay range cap
+    above      Virtual line above         Same custom styling/content as front
+    codelens   Native CodeLens above      LspCodeLens; document cap
+    off        No summary                 Other LSP features remain available
+
+front is the default. Above separates summaries from raw fields but uses
+vertical space; front shifts raw text horizontally. Neither changes buffer
+bytes or copied text. Custom modes use one configurable summary highlight.
+Server label parts/padding are preserved, without inferred route/detail colors.
+CodeLens uses Neovim's renderer; custom placement/highlight settings do not apply.
+
+Switch with: >vim
+    VenueReader summary above
+    VenueReader summary codelens
+    VenueReader summary off
+<
+Or use Lua: >lua
+    require("venue-reader").summary("front")
+<
+Neovim sends requests and handles refreshes, field hints and semantic rendering.
+The adapter intercepts only its client's summary hints (data.kind="summary")
+and draws owned extmarks. Display metadata comes in the initial inlay response;
+there are no per-message metadata requests. The adapter does not schedule
+viewport requests, split ranges, raise limits or scan FIX in Lua.
+
+Native gates                                      *venue-reader-summary-gates*
+
+Selecting front/above enables native inlay hints on attached FIX buffers.
+The gate is buffer-wide: other clients' field hints can also become enabled and
+continue to render natively. Explicit native disable is respected until the
+next managed attachment (including rename/restart) or explicit mode activation:
+>lua
+    vim.lsp.inlay_hint.enable(false, { bufnr = 0 })
+<
+CodeLens mode opts into native CodeLens. Native disable is reported without
+automatic mode fallback. Mode changes set fix.messageSummary.channels.inlayHints
+and codeLens. Contradictory explicit setup values are rejected; project/modeline
+settings keep their higher priority. Status/health report effective conflicts
+and sources. Correct the blocking override, then select the mode again.
+A coalesced document configuration lookup uses fix.describeOverrides; it does
+not make a request per summary or message.
+
+Limits and refresh                               *venue-reader-summary-limits*
+
+Native inlay requests cover the whole buffer in tested Neovim 0.12.5. Above the
+effective limits.rangeLines cap (default 2000), the server returns no inlay hints;
+custom summaries and field hints can both be absent. Native CodeLens has its own
+limits.codeLensLines cap (default 20000). Status/health show effective limits and
+document size; before configuration is ready they report pending. There is no
+cap increase, range splitting or automatic mode fallback.
+
+Editing hides old custom summaries until a current response arrives. Appending
+to a log can briefly hide summaries on each change. Initial native requests may
+report that configuration is not ready; later native server refresh supplies
+current data. The adapter adds no retry loop.
+
+==============================================================================
+Native field hints                                  *venue-reader-field-hints*
+
+Neovim renders tag names, enum labels and group paths as native inlay hints.
+Configure server output with: >lua
+    require("venue-reader").setup({
+      settings = { fix = {
+        inlayHints = {
+          tagNames = { enabled = true },
+          enumValues = { enabled = true },
+          groupPaths = { enabled = true },
+        },
+        semanticTokens = { enabled = true },
+      } },
+    })
+<
+Group paths require tag-name hints; disabling tag names also removes group paths.
+Server settings apply to the session and retain project/modeline precedence.
+The native inlay enable gate is buffer-wide. In codelens/off summary mode, enable
+field hints explicitly if needed: >lua
+    vim.lsp.inlay_hint.enable(true, { bufnr = 0 })
+<
+All native inlay labels use LspInlayHint. Group backgrounds color source text,
+not individual virtual labels. Custom summaries use VenueReaderSummary; native
+lenses use LspCodeLens.
+
+==============================================================================
+Semantic styles                                         *venue-reader-styling*
+
+The adapter adds these FIX-filetype defaults:
+
+    Semantic highlight                         Default
+    @lsp.type.price.fix                        Link to @number
+    @lsp.type.quantity.fix                     Link to @number
+    @lsp.type.money.fix                        Link to @number
+    @lsp.type.timestamp.fix                    Link to @string
+    @lsp.typemod.group.group1a.fix              Background from DiffAdd
+    @lsp.typemod.group.group1b.fix              Background from DiffChange
+    @lsp.typemod.group.group2a.fix              Background from DiffDelete
+    @lsp.typemod.group.group2b.fix              Background from DiffText
+    @lsp.typemod.group.group3a.fix              Background from Pmenu
+    @lsp.typemod.group.group3b.fix              Background from Folded
+
+Repeating-group hierarchy                         *venue-reader-group-colors*
+
+The server supplies a custom semantic token type group for a whole-entry
+background overlay. Its modifier group1a selects a nesting level and one of two
+alternating colors. Neovim combines these into the highlight name
+@lsp.typemod.group.group1a.fix; the .fix suffix scopes it to FIX filetype.
+
+    Level 1 (outermost)     group1a / group1b
+    Level 2                 group2a / group2b
+    Level 3 and deeper     group3a / group3b
+
+Odd-numbered entries use a and even-numbered entries use b. These interleaved
+colors distinguish neighboring entries; a/b do not identify group types. Each
+group restarts its own alternation at a, including a nested group under a new
+parent. A schematic example:
+>
+    Outer entry 1 [group1a]
+        Nested entry 1 [group2a]
+            Deeper entry 1 [group3a]
+            Deeper entry 2 [group3b]
+        Nested entry 2 [group2b]
+    Outer entry 2 [group1b]
+        Nested entry 1 [group2a]   <- restart under a new parent
+    Outer entry 3 [group1a]
+<
+A colored illustration with synthetic NoMDEntries(268) entries is available in
+the browser-oriented reference. Colors are illustrative; themes can give pairs
+different or identical backgrounds:
+https://github.com/sergluka/venue-reader.nvim/wiki/Highlights
+https://github.com/sergluka/venue-reader.nvim/blob/master/docs/group-colours.svg
+
+Theme behavior ~
+
+Defaults copy only explicit RGB/terminal backgrounds (bg/ctermbg), preserving
+field foregrounds. Source reverse/standout attributes are not interpreted.
+Missing backgrounds leave overlays unstyled, including themes that rely on a
+reversed foreground. Existing theme/user definitions win. Defaults are reapplied
+after ColorScheme; backgrounds are recalculated when the scheme clears styles.
+Colors are shared by FIX buffers, not configured per buffer/window.
+
+Customize standard highlights in a ColorScheme callback for persistence:
+>lua
+    vim.api.nvim_create_autocmd("ColorScheme", {
+      callback = function()
+        vim.api.nvim_set_hl(0, "@lsp.type.price.fix", { link = "@number" })
+        vim.api.nvim_set_hl(0, "@lsp.typemod.group.group1a.fix", {
+          bg = "#203028",
+        })
+      end,
+    })
+<
+After setup, use an empty table for an overlay highlight to clear its background.
+A later setup or color-scheme reset can restore defaults for empty groups. Avoid
+backgrounds on generic @lsp.mod.group1a.fix groups: overlays and individual source
+fields both carry group identity. Semantic rendering, encoding, refresh and
+limits remain native/server-owned.
+
+No Tree-sitter grammar is required. When present, base syntax highlighting
+follows Neovim's normal priority rules. Full/delta semantic responses cover the
+server's bounded prefix (limits.semanticTokensFullLines, default 2000 lines).
+The adapter does not fetch extra ranges to extend it.
+
+ vim:tw=78:ts=8:noet:ft=help:norl:

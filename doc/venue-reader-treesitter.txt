@@ -1,0 +1,170 @@
+*venue-reader-treesitter.txt*  Optional syntax, conceal and navigation
+
+Tree-sitter                                          *venue-reader-treesitter*
+
+Index: |venue-reader|    Setup: |venue-reader-setup|
+Wiki: https://github.com/sergluka/venue-reader.nvim/wiki/Tree-sitter
+
+Tree-sitter provides base syntax highlighting before and after LSP responses.
+It does not decode fields, generate summaries, prewarm the server or extend its
+processing limits. Named and unnamed normal buffers with filetype=fix can use
+it; only LSP attachment requires a document name. Native semantic highlighting
+keeps its normal priority over the syntax layer.
+
+==============================================================================
+Parser acquisition                                *venue-reader-grammar*
+
+A compatible installed FIX parser is reused without a manager or download.
+Compatibility is checked by native parser loading and the effective highlights
+query. Textobject queries load on selection; their errors do not disable base
+highlighting. If missing, the pinned grammar can install asynchronously through
+nvim-treesitter main. Its Tree-sitter CLI, C compiler, curl and tar requirements
+apply. Existing parser recipes and the manager's install directory are preserved.
+The adapter does not automatically upgrade or replace an incompatible parser.
+
+Optional dependencies can be loaded before setup with the LazyVim spec in
+|venue-reader-lazyvim|. The manager is only needed for installation; textobjects
+is needed for selection and the suggested navigation mappings. Neither plugin
+nor its toolchain is bootstrapped automatically.
+
+Missing dependencies, network or build failures leave LSP available. One plugin
+warning is reported per failed installation attempt; upstream manager output is
+independent. Concurrent requests share the pending install. Automatic failure
+does not retry on every buffer event. Fix the cause and retry explicitly:
+>vim
+    VenueReader install grammar
+<
+Also retry if the manager loads after acquisition failed. A query-only/incomplete
+manager installation or incompatible parser may need manual repair and a Neovim
+restart. Explicit retry does not force an overwrite.
+
+Grammar metadata:
+https://github.com/sergluka/venue-reader.nvim/blob/master/lua/venue-reader/grammar.json
+Tested dependency revisions:
+https://github.com/sergluka/venue-reader.nvim/blob/master/tests/dependencies.json
+Manager installation requirements:
+https://github.com/nvim-treesitter/nvim-treesitter
+
+==============================================================================
+Disable or limit syntax                       *venue-reader-treesitter-options*
+
+Set treesitter.enabled=false to disable the adapter's syntax features. Use
+the following configuration to reuse parsers without automatic downloads:
+>lua
+    require("venue-reader").setup({
+      treesitter = { enabled = true, auto_install = false },
+    })
+<
+An enabled(bufnr) predicate can reuse your existing large-file policy without
+scanning buffer contents: >lua
+    require("venue-reader").setup({
+      treesitter = {
+        enabled = function(bufnr)
+          return vim.b[bufnr].large_file ~= true -- Your existing large-file flag.
+        end,
+        auto_install = true,
+      },
+    })
+<
+A buffer opt-out also works before installation completes: >lua
+    vim.b.venue_reader_treesitter = false
+<
+The predicate and opt-out also guard textobject actions. There is no built-in
+file-size threshold. Standard textobjects and motions may parse/search the
+whole syntax tree; disable them for files your policy considers too large.
+
+Lifecycle ~
+
+Automatic highlighting starts once per loaded FIX-filetype period. Native
+vim.treesitter.stop() is not undone by buffer entry, LSP restart or repeated
+setup. Returning to FIX after a filetype change, or unloading/reloading the
+buffer, begins a new period. The buffer opt-out persists until cleared.
+
+An already active external highlighter retains its existing management. The
+adapter tracks whether it started highlighting without reading Neovim's internal
+instance registry. If another component later replaces that instance with
+stop/start, disabling the adapter or changing filetype can stop the replacement
+too. This is an accepted limit of the lightweight tracking.
+
+==============================================================================
+SOH display                                             *venue-reader-conceal*
+
+The query can show SOH as a vertical bar without changing source bytes. The
+adapter leaves window options unchanged: conceallevel=0 leaves SOH unconcealed,
+and concealcursor controls the cursor line. Opt in for the current window:
+>vim
+    setlocal conceallevel=2 concealcursor=nc
+<
+==============================================================================
+Selections                                          *venue-reader-textobjects*
+
+nvim-treesitter-textobjects main handles selections with global Plug targets in
+Visual/operator-pending modes. No keys are bound by default. Each invocation
+checks FIX-buffer eligibility.
+
+    Target                         Syntax node
+    <Plug>(VenueReaderTag)          Numeric tag
+    <Plug>(VenueReaderValue)        Field value
+    <Plug>(VenueReaderField)        Complete tag=value field
+    <Plug>(VenueReaderMessage)      Complete message
+    <Plug>(VenueReaderComment)      Comment
+
+For example: >lua
+    vim.keymap.set({ "x", "o" }, "if", "<Plug>(VenueReaderField)")
+    vim.keymap.set({ "x", "o" }, "iv", "<Plug>(VenueReaderValue)")
+<
+The Lua helper is require("venue-reader").textobject("field"). It also accepts
+tag, value, message and comment. Your textobjects settings for selection mode,
+lookahead and surrounding whitespace remain in effect.
+
+:VenueReader status reports buffer eligibility and parser/acquisition state.
+:checkhealth venue-reader reports global dependency state without installing
+or parsing. Decoded yank can use native textobject motions through its operator:
+|venue-reader-yank|.
+
+==============================================================================
+Suggested navigation                                 *venue-reader-navigation*
+
+The following buffer-local mappings use nvim-treesitter-textobjects main and
+work in Normal, Visual and operator-pending modes. Choose other keys if needed.
+
+    Node       Next/previous start        Next/previous end
+    Field      ]] / [[                    ]} / [{
+    Message    ]m / [m                    ]M / [M
+    Comment    ]g / [g                    ]G / [G
+
+>lua
+    -- after/ftplugin/fix.lua
+    local move = require("nvim-treesitter-textobjects.move")
+
+    local function map_motion(key, method, capture, description)
+      vim.keymap.set({ "n", "x", "o" }, key, function()
+        local state = require("venue-reader").status().treesitter
+        if state.eligible and state.parser_available then
+          move[method](capture, "textobjects")
+        end
+      end, { buffer = true, desc = "FIX: " .. description })
+    end
+
+    map_motion("]]", "goto_next_start", "@field", "Next field start")
+    map_motion("[[", "goto_previous_start", "@field", "Previous field start")
+    map_motion("]}", "goto_next_end", "@field", "Next field end")
+    map_motion("[{", "goto_previous_end", "@field", "Previous field end")
+
+    map_motion("]m", "goto_next_start", "@message", "Next message start")
+    map_motion("[m", "goto_previous_start", "@message", "Previous message start")
+    map_motion("]M", "goto_next_end", "@message", "Next message end")
+    map_motion("[M", "goto_previous_end", "@message", "Previous message end")
+
+    map_motion("]g", "goto_next_start", "@comment", "Next comment start")
+    map_motion("[g", "goto_previous_start", "@comment", "Previous comment start")
+    map_motion("]G", "goto_next_end", "@comment", "Next comment end")
+    map_motion("[G", "goto_previous_end", "@comment", "Previous comment end")
+<
+For example, ]] moves to the next field and d]] deletes up to its start. The
+guard respects the adapter's predicate/buffer opt-out and skips movement until
+a parser is available. Motions can parse/search the whole tree; apply your
+large-file policy. Native LSP document symbols remain available for navigating
+the server's message outline.
+
+ vim:tw=78:ts=8:noet:ft=help:norl:

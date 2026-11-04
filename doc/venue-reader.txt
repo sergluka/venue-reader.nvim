@@ -1,282 +1,131 @@
 *venue-reader.txt*  Optional Neovim adapter for Venue Reader
 
-Venue Reader                                              *venue-reader*
+Venue Reader                                                  *venue-reader*
 
-Requires Neovim 0.12 or later. The language server also works with Neovim's
-native LSP client without this plugin. Native hover, diagnostics, code actions,
-document links, selection ranges and document symbols use Neovim's interfaces.
-The plugin adds server acquisition, summary rendering and small command helpers.
-Protocol analysis and dictionary data belong to the server.
+Venue Reader is an LSP server for FIX logs. This optional plugin adapts its
+features to Neovim and adds server installation, summary rendering and small
+command helpers. Protocol analysis and dictionary data belong to the server.
+Requires Neovim 0.12 or later.
 
-For installation, illustrations and complete examples, see the plugin README.
-The checked-in lua/venue-reader/release.json and grammar.json identify the pinned
-server and grammar; tests/dependencies.json records tested tool/dependency pins.
+The server also works with Neovim's native LSP client without this plugin.
+Hover, diagnostics, code actions, document links, selection ranges and document
+symbols use Neovim's standard interfaces. The plugin does not replace them.
 
-==============================================================================
-Setup                                                  *venue-reader-setup*
+Documentation ~
 
-Load the plugin with your package manager, then call: >lua
-    require("venue-reader").setup()
-<
-For LazyVim, create lua/plugins/venue-reader.lua: >lua
-    return {
-      {
-        "sergluka/venue-reader.nvim",
-        dependencies = { -- optional
-          { "nvim-treesitter/nvim-treesitter", branch = "main" },
-          { "nvim-treesitter/nvim-treesitter-textobjects", branch = "main" },
-        },
-        opts = {},
-      },
-    }
-<
-For the native Neovim package manager, add to init.lua: >lua
-    vim.pack.add({
-      {
-        src = "https://github.com/sergluka/venue-reader.nvim",
-      },
-    })
-    require("venue-reader").setup()
-<
-The optional dependencies use Tree-sitter main APIs; ensure your LazyVim
-configuration uses those APIs.
+    Install and configure        |venue-reader-setup|
+    Commands and Lua helpers     |venue-reader-commands|
+    Summaries and field styling  |venue-reader-annotations.txt|
+    Optional syntax/navigation   |venue-reader-treesitter|
+    Development and checks       |venue-reader-development.txt|
+    Troubleshooting              |venue-reader-troubleshooting|
 
-LazyVim calls setup through opts. For native packages, use
-:lua vim.pack.update({ "venue-reader.nvim" }) to update the package.
+Follow a help link with CTRL-] and return with CTRL-T. The documentation above
+is bundled with the plugin and works offline.
 
-Open a *.fix file or use :set ft=fix. LSP attachment requires a normal buffer
-with an explicit name. :file /path/log.fix names a buffer without writing it;
-:saveas also works. Tree-sitter syntax can work in unnamed FIX buffers.
+README:
+https://github.com/sergluka/venue-reader.nvim/blob/master/README.md
 
-The root is the nearest parent containing .venue-reader.toml, otherwise the
-file's directory. Named buffers in the same managed session share a client.
-Renaming closes the old server document and reopens under the new name.
+Wiki:
+https://github.com/sergluka/venue-reader.nvim/wiki/Home
 
-An existing binary with optional syntax disabled: >lua
-    require("venue-reader").setup({
-      server = {
-        cmd = { "/absolute/path/to/venue-reader", "--stdio" },
-        auto_install = false,
-      },
-      treesitter = { enabled = false },
-    })
-<
-Options and defaults: >lua
-    {
-      server = { auto_install = true },
-      summary = { mode = "front", highlight = "VenueReaderSummary" },
-      commands = { timeout_ms = 5000 },
-      treesitter = { enabled = true, auto_install = true },
-      settings = { fix = {} },
-    }
-<
-server.cmd is an argv list without shell parsing; its executable must support
---version. Without an explicit command, discovery tries a compatible PATH
-binary, then a managed binary, then verified asynchronous installation.
-An invalid explicit command fails rather than selecting another executable.
-Compatible stable patches in the pinned major/minor series are reused, without
-automatic upgrades, PATH edits or replacement of external installations.
-
-settings.fix passes server settings through. Project/modeline settings keep
-higher priority. Repeated setup updates server settings; executable changes need
-an explicit restart. commands.timeout_ms is a finite positive integer. Its
-deadline covers command bootstrap/requests after client acquisition, excluding
-binary installation and time spent choosing a dictionary.
+The project is currently private. Wiki sources are prepared in the sibling
+venue-reader.nvim.wiki checkout. Its GitHub wiki links become available after
+publication. This help includes the installation, usage and reference material;
+the wiki also includes a colored group illustration.
 
 ==============================================================================
-Commands                                            *:VenueReader* *venue-reader-commands*
+First use                                                *venue-reader-usage*
 
-:VenueReader start              Native :lsp enable venue_reader.
-:VenueReader stop               Native :lsp stop venue_reader.
-:VenueReader restart            Resolve executable, then native restart/enable.
-:VenueReader status             Show session, server, annotation and grammar state.
-:VenueReader install server     Explicit server discovery/installation retry.
-:VenueReader install grammar    Explicit optional parser acquisition retry.
-:VenueReader summary {mode}     Select front, above, codelens or off.
-:VenueReader yank [register]    Decode cursor field to a text register.
-:[range]VenueReader yank [reg]  Decode the inclusive line range.
-:VenueReader dictionary [name]  Choose or select a server dictionary.
-:VenueReader settings           Preview committed settings/sources/warnings.
-:VenueReader tag {number} [val] Preview a tag/value reference.
-:checkhealth venue-reader       Inspect requirements/current global state.
-
-Only yank accepts an Ex range. Tag numbers are positive decimal u32 integers;
-optional values remain strings. Ex arguments follow normal space escaping.
-
-Lifecycle helpers use native scope: clients named venue_reader across roots.
-Stop terminates current clients; :lsp disable venue_reader prevents automatic
-attachment. :lsp enable venue_reader resumes it. Native restart preserves buffers.
-
-Yank/settings need a named FIX buffer, attached client and ready configuration.
-Tag/dictionary can start an unattached session without a FIX document. They use
-the current owned client or a matching root for the current working directory.
-Dictionary selection is session-wide; project/modeline overrides retain priority.
-Settings is a one-shot snapshot, not a continuously updating inspector.
-
-==============================================================================
-Lua helpers                                                *venue-reader-lua*
-
-Use require("venue-reader") for the public module:
-
-setup(opts)                    Configure and enable the adapter.
-start(), stop(), restart()     Lifecycle counterparts of the commands above.
-status([bufnr])                Return session/acquisition/annotations/treesitter.
-install([target])              target is "server" (default) or "grammar".
-summary(mode)                  Select one of the four summary modes.
-yank([opts])                   Decode cursor, line or live Visual selection.
-operator()                     Expression mapping for decoded g@ operator.
-dictionary([name])             Choose or select the dictionary.
-settings()                     Preview current committed settings.
-tag(number[, value])           Preview tag/value reference.
-textobject(kind)               Select tag/value/field/message/comment via TS.
-
-Yank example: >lua
-    require("venue-reader").yank({
-      mode = "line", first = 10, last = 20, register = "a",
-    })
+Install with |venue-reader-setup|, then open a *.fix file or use: >vim
+    set ft=fix
 <
-yank() defaults to the cursor field. mode="visual" requires a live Visual
-selection. Line bounds are inclusive and one-based; omitted line bounds use the
-cursor line. Use the Plug operator below for native char/line/block motions.
-
-Without an explicit register, yank writes register 0, makes it unnamed and
-mirrors configured unnamed/unnamedplus clipboard destinations. Explicit registers
-write only their destination; uppercase named registers append natively.
-_ discards the operation. Read-only/search/expression destinations are rejected.
-Paste normally with p/P. Clipboard provider writes are not atomic.
-
-Errors and all-empty output preserve registers. Edits, rename, detach, changed
-settings/internal registers or a newer yank can invalidate pending results.
-The entire selection obeys server limits; no range splitting or Lua FIX decoding.
-
-==============================================================================
-Mappings                                                   *venue-reader-mappings*
-
-No user keys are bound by default. Available targets:
-
-<Plug>(VenueReaderYank)         Normal g@ operator or live Visual decoded yank.
-<Plug>(VenueReaderTag)          Select numeric tag (Visual/operator-pending).
-<Plug>(VenueReaderValue)        Select field value.
-<Plug>(VenueReaderField)        Select complete tag=value field.
-<Plug>(VenueReaderMessage)      Select message.
-<Plug>(VenueReaderComment)      Select comment.
-
-Example: >lua
-    vim.keymap.set({ "n", "x" }, "<leader>y", "<Plug>(VenueReaderYank)")
-    vim.keymap.set({ "x", "o" }, "if", "<Plug>(VenueReaderField)")
+LSP attachment requires a normal buffer with an explicit name. A named buffer
+need not exist on disk. To name one without saving: >vim
+    file /path/log.fix
 <
-The Yank mapping captures v:register. A clipboard-implied default cannot be
-reliably distinguished from an explicit prefix; use the command/Lua register
-argument when an exact clipboard-only destination is required.
+:saveas also works. Renaming closes the old server document before opening the
+new one. The project root is the nearest parent containing .venue-reader.toml,
+otherwise the file's directory. Buffers in the same managed session share a
+client. Optional syntax can work in unnamed FIX buffers too.
 
-Tree-sitter selections require nvim-treesitter-textobjects main. Its user
-selection-mode/lookahead/whitespace settings apply. Guarded selections obey the
-adapter's predicate and buffer opt-out. See README for explicit field/message/
-comment navigation mappings through the standard move API.
-
-==============================================================================
-Summary modes                                                *venue-reader-modes*
-
-front (default)   Summary inline before raw text; VenueReaderSummary highlight.
-above             Summary on a virtual line above; same custom styling as front.
-codelens          Native CodeLens above; LspCodeLens styling and document cap.
-off               No summary; native fields and other LSP features remain usable.
-
-The server provides the same summary information through either channel where
-available. Custom modes use one highlight, without route/detail colors. One
-summary backend is active. There is no automatic fallback between modes.
-
-Front/above enable the native buffer-wide inlay gate; other clients' hints can
-also become enabled. Explicit native disable is respected until a managed
-attachment (rename/restart included) or explicit mode activation. CodeLens uses
-the native gate; disabling it does not choose a different backend.
-
-The adapter renders returned summary hints only. Neovim schedules requests,
-refreshes and native field/semantic rendering. Effective limits.rangeLines can
-exclude inlay summaries and field hints for an oversized request; CodeLens has
-its own limits.codeLensLines cap. Semantic full responses cover a bounded prefix.
-No extra ranges, cap increases or recovery scans are requested by the adapter.
-Project/modeline channel conflicts appear in status/health, not as overrides.
-
-==============================================================================
-Optional syntax                                         *venue-reader-treesitter*
-
-A compatible FIX parser is reused without nvim-treesitter. Missing parsers can
-install asynchronously through nvim-treesitter main and its CLI/compiler tools.
-Missing manager, toolchain, network or an incompatible parser does not block LSP.
-Automatic failure does not retry at each buffer event; use install grammar after
-fixing the cause. Existing recipes/install directories are preserved; retry does
-not force an incompatible or incomplete installation to be overwritten.
-
-Reuse installed grammar without automatic downloads: >lua
-    require("venue-reader").setup({
-      treesitter = { enabled = true, auto_install = false },
-    })
+Use Neovim's native LSP interfaces to inspect fields and messages. For example:
+>lua
+    vim.lsp.buf.hover()
+    vim.lsp.buf.code_action()
+    vim.lsp.buf.document_symbol()
+    vim.diagnostic.open_float()
 <
-The manager is only needed to install; textobjects is only needed for selection.
-See README for the optional manager's lazy.nvim setup. Neither plugin nor its
-toolchain is bootstrapped by this adapter.
+The outline provides message navigation. Group detail in that outline is a
+server setting. There are no plugin key bindings by default; optional yank and
+syntax mappings are in |venue-reader-mappings| and |venue-reader-navigation|.
 
-Use enabled=false, an enabled(bufnr) predicate, or the buffer opt-out: >lua
-    vim.b.venue_reader_treesitter = false
+Front summaries appear before raw messages by default. Change placement with:
+>vim
+    VenueReader summary above
+    VenueReader summary codelens
+    VenueReader summary off
 <
-For example, a predicate can reuse your own existing large-file flag: >lua
-    require("venue-reader").setup({
-      treesitter = {
-        enabled = function(bufnr)
-          return vim.b[bufnr].large_file ~= true
-        end,
-      },
-    })
+These are the modes in |venue-reader-modes|. Decoded text can be copied with
+|venue-reader-yank| and pasted normally, including into a new buffer.
+
+Inspect the current session and requirements with: >vim
+    VenueReader status
+    checkhealth venue-reader
 <
-There is no built-in file-size threshold. Textobjects/motions may parse/search
-the whole tree. Optional syntax does not generate decoded labels or summaries,
-prewarm the server or recover data omitted by server processing limits.
-
-SOH conceal displays | while preserving bytes. Set window conceallevel and
-concealcursor yourself; conceallevel=0 leaves SOH unconcealed. The adapter does
-not change window options. Automatic syntax starts once per loaded FIX-filetype
-period. Native stop() is not undone by buffer entry, restart or repeated setup;
-unload/reload or leaving/returning to FIX begins a new period.
-
-Initially external highlighting is preserved. If another component replaces an
-adapter-started instance with stop/start, later adapter disable/filetype cleanup
-can stop that replacement too. The adapter intentionally uses no internal native
-instance registry to distinguish later replacements.
+Other clients' diagnostics and providers are preserved. Native Neovim owns LSP
+requests, refreshes and lifecycle; the plugin does not scan FIX in Lua or recover
+results omitted by server limits.
 
 ==============================================================================
-Styling                                                     *venue-reader-styling*
+Troubleshooting                                *venue-reader-troubleshooting*
 
-Use native highlights and a ColorScheme callback for persistent custom styling.
-Custom summaries use VenueReaderSummary; native lenses use LspCodeLens; native
-inlay labels use LspInlayHint. Source semantic styles cannot independently color
-virtual label parts.
+No LSP attachment ~
+Check filetype=fix, normal buffer type, an explicit buffer name and native LSP
+enablement. Run :VenueReader status and :checkhealth venue-reader. A buffer can
+have a name without a saved file. :lsp enable venue_reader enables attachment;
+:lsp disable venue_reader prevents future automatic attachment.
 
-Price/quantity/money semantic defaults link to @number, timestamps to @string.
-Repeating-group source backgrounds use @lsp.typemod.group.group1a.fix and the
-corresponding a/b pairs: group1 for outer entries, group2 for the next level,
-group3 for deeper levels. The a/b variants alternate adjacent entries and restart
-for each group. They are positions in the hierarchy, not different group types.
-Background defaults derive from theme groups and preserve foregrounds. Existing
-user styles win. The README includes the full mapping and a colored illustration.
+Server installation failed ~
+Check acquisition state, platform and required tools in |venue-reader-server|.
+Fix the cause and use :VenueReader install server. A compatible explicit binary
+with auto_install=false is suitable for offline use. An invalid explicit command
+is an error; it is not silently replaced with another executable.
 
-==============================================================================
-Troubleshooting                                       *venue-reader-troubleshooting*
+No summaries or field hints ~
+Check the mode, native inlay/CodeLens gates, effective channel/master switches
+and server caps in |venue-reader-summary-limits|. Correct project/modeline
+conflicts and select the desired mode again. A document over the inlay range
+cap can have no inlay summaries or field hints. Modes do not fall back or raise
+limits automatically.
 
-No attachment: confirm filetype=fix, a normal buffer with an explicit name, native
-LSP enabled, and status/checkhealth. A named buffer need not exist on disk.
-No summaries: check mode, native gates, effective channel/master switches and
-server caps. Correct project/modeline conflicts and select the mode again.
-Configuration not ready: initial native requests may report it. Native refresh
-supplies current annotations; explicit commands report errors without polling.
-Retry a command once configuration completes.
-No optional syntax: inspect grammar state, toolchain and manager load order; retry
-install grammar explicitly. Incompatible loaded parsers may need manual repair
-and a Neovim restart. Invalid textobject queries do not disable base highlighting.
-No clipboard output: inspect the native provider; explicit register writes can
-partially succeed before a provider failure.
+Configuration not ready ~
+Initial native requests can report that document configuration is not ready.
+Native server refresh supplies current annotations. Explicit commands report
+the error without polling; retry after configuration completes.
 
-Server settings reference:
+Summaries disappear while appending ~
+Edits hide old custom summaries until a current response arrives. Appending to
+a log can briefly hide them on each change.
+
+No optional syntax or selection ~
+Inspect grammar state, toolchain and manager load order. Fix the cause and run
+:VenueReader install grammar. Incompatible parsers or incomplete manager
+installations can need manual repair and a Neovim restart. Retry does not force
+an overwrite. Invalid textobject queries do not disable base highlighting.
+See |venue-reader-treesitter| and |venue-reader-textobjects|.
+
+No clipboard output ~
+Inspect Neovim's clipboard provider. Explicit register writes can partially
+succeed before a provider failure, and some providers only emit warnings.
+See |venue-reader-registers| for destination selection.
+
+Further reference ~
+Plugin troubleshooting:
+https://github.com/sergluka/venue-reader.nvim/wiki/Troubleshooting
+Server settings:
 https://github.com/sergluka/venue-reader/wiki/Configuration-Reference
+Server troubleshooting:
+https://github.com/sergluka/venue-reader/wiki/Troubleshooting
 
  vim:tw=78:ts=8:noet:ft=help:norl:

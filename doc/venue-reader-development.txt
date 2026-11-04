@@ -1,0 +1,122 @@
+*venue-reader-development.txt*  Development and verification
+
+Development                                           *venue-reader-development*
+
+Index: |venue-reader|    Installation: |venue-reader-setup|
+Wiki: https://github.com/sergluka/venue-reader.nvim/wiki/Contributing
+
+The plugin is a thin adapter. Use native Neovim LSP features instead of adding
+parallel implementations. Keep protocol analysis, dictionaries and deliberate
+processing limits in the generic server. Use public specifications and synthetic
+FIX data for examples and tests.
+
+The headless tests use mini.test and Neovim's built-in LSP client, including
+plugin lifecycle. The real-server suite checks a named, unsaved FIX buffer
+against the published binary. The transport suite controls replies explicitly
+for ordering, cancellation, startup failure and server exit.
+
+==============================================================================
+Prepare                                                *venue-reader-test-setup*
+
+Use Neovim 0.12+, Make, Git, StyLua and Luacheck. Parser preparation also needs
+the Tree-sitter CLI and a C compiler. Preparation uses curl and tar (unzip for
+Windows archives). Python is not required. mini.test is development-only.
+
+Exact test/dependency pins, server release identifiers and grammar revision:
+https://github.com/sergluka/venue-reader.nvim/blob/master/tests/dependencies.json
+https://github.com/sergluka/venue-reader.nvim/blob/master/lua/venue-reader/release.json
+https://github.com/sergluka/venue-reader.nvim/blob/master/lua/venue-reader/grammar.json
+
+From the plugin checkout: >sh
+    make prepare
+<
+Preparation clones pinned mini.test, nvim-treesitter, textobjects and grammar
+sources into .test-deps/, then builds an isolated FIX parser from generated C
+sources. It records grammar revision, CLI version and parser checksum. It also
+selects the platform archive for the pinned server, verifies SHA-256 and stores
+the binary and notices in ignored .test-deps/. It does not change PATH.
+
+Once test dependencies are prepared, supply a release archive to prepare the
+server without downloading: >sh
+    make prepare ARCHIVE=/path/to/venue-reader-x86_64-unknown-linux-gnu.tar.gz
+<
+make prepare-tests prepares the framework, optional plugin checkouts and parser
+without the server. The transport, dependencies, selection, commands and yank
+suites need no server binary. Installation tests need the prepared Linux release
+archive for offline fixtures.
+
+==============================================================================
+Checks                                                   *venue-reader-tests*
+
+After preparation, checks and tests run without network access: >sh
+    make lint
+    make test
+    make test SUITE=real_server
+    make test SUITE=transport
+    make test SUITE=dependencies
+    make test SUITE=lifecycle
+    make test SUITE=installation
+    make test SUITE=summaries
+    make test SUITE=highlights
+    make test SUITE=selection
+    make test SUITE=commands
+    make test SUITE=yank
+    make test SUITE=commands_server
+    make test SUITE=treesitter
+    make test SUITE=acceptance
+<
+Normal tests verify dependency revisions and parser integrity. They never
+download or compile. Tests isolate Neovim configuration, data, state and working
+directory in a temporary directory. mini.test reports failures with a nonzero
+exit code; finalizers clean clients and buffers. The startup-failure case
+intentionally produces a server-exit warning with code 7.
+
+Default tests include commands_server, checking decoded yank and command helpers
+against the pinned published release. For local server development:
+>sh
+    make test SUITE=real_server SERVER=/absolute/path/to/venue-reader
+<
+The runner labels overrides separately; they are not release-artifact evidence.
+make test NVIM=/path/to/nvim selects another Neovim executable. Before release
+tests, the prepared archive and extracted binary are rechecked.
+
+Format changed files with make format. The Makefile coordinates standard tools;
+tests can also be launched directly: >sh
+    nvim --headless -u NONE -i NONE -l scripts/test.lua transport
+    nvim --headless -u NONE -i NONE -l scripts/prepare.lua /path/to/release-archive.tar.gz
+<
+Grammar installation smoke ~
+
+A separate opt-in smoke downloads/builds the grammar in isolated XDG directories,
+using the prepared manager and a supplied lazy.nvim checkout: >sh
+    make smoke-grammar LAZY=/absolute/path/to/lazy.nvim
+<
+It checks dependency load order and explicit retry after late manager loading,
+with a separate timeout. Evidence is saved to .test-deps/grammar-smoke.json.
+It does not load personal configuration or modify personal parsers.
+
+==============================================================================
+Acceptance                                             *venue-reader-acceptance*
+
+Local validation covers Linux x86_64 with Neovim 0.12.0 and 0.12.5. The manifest
+also identifies macOS/Windows artifacts. Native checks on those platforms remain
+outstanding; placeholders are explicitly unexecuted, not successful evidence.
+
+Acceptance commands and platform placeholders:
+https://github.com/sergluka/venue-reader.nvim/blob/master/tests/ACCEPTANCE.md
+
+Documentation checks ~
+
+Keep venue-reader.nvim, venue-reader.nvim.wiki, venue-reader and venue-reader.wiki
+checkouts next to each other. From the plugin checkout, validate links, anchors,
+help tags and Lua examples:
+>sh
+    nvim --headless -u NONE -i NONE -l ../venue-reader.nvim.wiki/tools/check_docs.lua
+<
+This check needs no network or server acquisition. Keep source-backed claims,
+examples and limits aligned across README, wiki and native help. Help uses tags,
+text tables and plain examples; colored illustrations belong in the wiki.
+The local sibling wiki remains unpublished until the project is public, as
+described in |venue-reader|.
+
+ vim:tw=78:ts=8:noet:ft=help:norl:

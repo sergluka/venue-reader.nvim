@@ -1,0 +1,155 @@
+*venue-reader-setup.txt*  Installation and configuration
+
+Setup                                                   *venue-reader-setup*
+
+Index: |venue-reader|    Commands: |venue-reader-commands|
+Wiki: https://github.com/sergluka/venue-reader.nvim/wiki/Installation
+
+Choose one package manager. Requires Neovim 0.12 or later.
+
+==============================================================================
+LazyVim                                            *venue-reader-lazyvim*
+
+Create lua/plugins/venue-reader.lua in your Neovim configuration directory:
+>lua
+    -- lua/plugins/venue-reader.lua
+    return {
+      {
+        "sergluka/venue-reader.nvim",
+        dependencies = { -- optional
+          { "nvim-treesitter/nvim-treesitter", branch = "main" },
+          { "nvim-treesitter/nvim-treesitter-textobjects", branch = "main" },
+        },
+        opts = {},
+      },
+    }
+<
+LazyVim loads the spec and calls setup through opts. The optional dependencies
+use Tree-sitter main APIs; ensure your LazyVim configuration uses those APIs.
+The inner spec also works in a standalone lazy.nvim configuration. The manager
+is only needed for parser installation; textobjects is only needed for syntax
+selection/navigation. No other Neovim plugin is required for LSP features.
+
+==============================================================================
+Native packages                                     *venue-reader-pack*
+
+Add this to init.lua for Neovim's built-in package manager:
+>lua
+    -- init.lua
+    vim.pack.add({
+      {
+        src = "https://github.com/sergluka/venue-reader.nvim",
+      },
+    })
+    require("venue-reader").setup()
+<
+Update the package with: >vim
+    lua vim.pack.update({ "venue-reader.nvim" })
+<
+A package loaded by another manager also needs the same setup() call.
+Server discovery starts when a named FIX buffer is opened.
+See |venue-reader-usage|.
+
+==============================================================================
+Configuration                                      *venue-reader-options*
+
+Defaults: >lua
+    require("venue-reader").setup({
+      server = { auto_install = true },
+      summary = { mode = "front", highlight = "VenueReaderSummary" },
+      commands = { timeout_ms = 5000 },
+      treesitter = { enabled = true, auto_install = true },
+      settings = { fix = {} },
+    })
+<
+server.auto_install ~
+Allow asynchronous verified server installation when no compatible binary is
+available. See |venue-reader-server|. An explicit retry is available through
+:VenueReader install server.
+
+server.cmd ~
+Optional argv list without shell parsing. The executable must support --version.
+For an existing binary or offline use, with optional syntax disabled:
+>lua
+    require("venue-reader").setup({
+      server = {
+        cmd = { "/absolute/path/to/venue-reader", "--stdio" },
+        auto_install = false,
+      },
+      treesitter = { enabled = false },
+    })
+<
+Omit treesitter.enabled=false to allow compatible parser reuse and automatic
+grammar installation when the optional manager is available. LSP does not wait
+for grammar installation.
+
+summary.mode / summary.highlight ~
+Modes are front (default), above, codelens and off. The configurable highlight
+applies to custom front/above summaries. Native CodeLens uses LspCodeLens.
+See |venue-reader-modes| and |venue-reader-styling|.
+
+commands.timeout_ms ~
+Finite positive integer; default 5000. The deadline starts after client
+acquisition and covers command bootstrap plus requests. Binary discovery/
+installation and time spent choosing a dictionary are excluded. Timeouts cancel
+native outstanding requests; late results do not write registers or previews.
+
+settings.fix ~
+Pass server settings through. Project/modeline settings keep higher priority.
+Empty settings.fix is sent as a JSON object. Repeated setup is safe and updates
+settings live. Changing the executable requires :VenueReader restart.
+
+For example, native field labels can be enabled with the settings shown in
+|venue-reader-field-hints|. Generic server configuration belongs to the server
+reference rather than a second plugin-specific schema:
+https://github.com/sergluka/venue-reader/wiki/Configuration
+https://github.com/sergluka/venue-reader/wiki/Configuration-Reference
+
+Mode selection sets fix.messageSummary.channels.inlayHints and codeLens.
+Contradictory explicit setup values are rejected. Project/modeline conflicts
+are reported in status/health with their sources; they are not overridden.
+See |venue-reader-summary-gates|.
+
+treesitter.enabled / treesitter.auto_install ~
+Optional syntax defaults to enabled with automatic installation allowed.
+enabled can be a boolean or an enabled(bufnr) predicate. A buffer opt-out and
+large-file policy are described in |venue-reader-treesitter-options|.
+
+==============================================================================
+Server discovery                                      *venue-reader-server*
+
+Discovery reuses a compatible explicit command, PATH executable or managed
+installation, in that order. Compatible stable patch releases in the same
+major/minor series as the pinned release are accepted. An invalid explicit
+command fails rather than selecting another executable.
+
+If no binary is found and auto_install is true, the pinned release installs
+asynchronously under stdpath("data")/venue-reader/. The adapter verifies SHA-256
+before extraction. Compatible installations are reused without automatic
+upgrades, PATH changes or replacement of external installations.
+
+Automatic installation tools ~
+
+    Linux       curl, tar, sha256sum
+    macOS       curl, tar, shasum
+    Windows     curl.exe, tar.exe, certutil.exe
+
+Missing tools or unsupported targets report a manual installation path.
+Linux automatic artifacts require x86_64/glibc >=2.35. The manifest also lists
+macOS x86_64/aarch64 and Windows x86_64 artifacts. Native validation on macOS and
+Windows remains outstanding; listed artifacts are not native test evidence.
+
+Pinned release metadata:
+https://github.com/sergluka/venue-reader.nvim/blob/master/lua/venue-reader/release.json
+
+Use :VenueReader status for session/binary/version/acquisition/failure state.
+Use :checkhealth venue-reader for requirements and current global state.
+After fixing an acquisition failure, retry explicitly: >vim
+    VenueReader install server
+<
+Parser acquisition is separate and optional: |venue-reader-treesitter|.
+
+Configuration wiki:
+https://github.com/sergluka/venue-reader.nvim/wiki/Configuration
+
+ vim:tw=78:ts=8:noet:ft=help:norl:
