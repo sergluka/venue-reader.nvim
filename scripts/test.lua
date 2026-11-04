@@ -1,5 +1,6 @@
 local root = vim.fs.normalize(vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h"))
 local temporary = vim.fn.tempname()
+local started = vim.uv.hrtime()
 
 local success, result = pcall(function()
   assert(vim.fn.has("nvim-0.12") == 1, "Neovim >=0.12 is required")
@@ -16,6 +17,7 @@ local success, result = pcall(function()
     "yank",
     "commands_server",
     "treesitter",
+    "acceptance",
   }
   local suites = #arg > 0 and vim.list_slice(arg)
     or (
@@ -58,6 +60,7 @@ local success, result = pcall(function()
     or vim.tbl_contains(suites, "highlights")
     or command_integration
     or vim.tbl_contains(suites, "treesitter")
+    or vim.tbl_contains(suites, "acceptance")
   then
     local binary = vim.env.VENUE_READER_TEST_SERVER
     local override = binary ~= nil and binary ~= ""
@@ -80,6 +83,7 @@ local success, result = pcall(function()
   return child.code
 end)
 vim.fn.delete(temporary, "rf")
+io.stdout:write(("Test duration: %.3f seconds\n"):format((vim.uv.hrtime() - started) / 1e9))
 if not success or result ~= 0 then
   if not success then
     io.stderr:write(tostring(result) .. "\n")

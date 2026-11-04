@@ -64,6 +64,7 @@ make test SUITE=commands
 make test SUITE=yank
 make test SUITE=commands_server
 make test SUITE=treesitter
+make test SUITE=acceptance
 ```
 
 `transport`, `dependencies`, `selection`, `commands` and `yank` need no server
@@ -114,9 +115,10 @@ nvim --headless -u NONE -i NONE -l scripts/test.lua transport
 nvim --headless -u NONE -i NONE -l scripts/prepare.lua /path/to/release-archive.tar.gz
 ```
 
-Local validation currently covers Linux x86_64 with Neovim 0.12.5. The manifest
-also identifies macOS and Windows artifacts; native tests on those platforms and
-the minimum supported Neovim remain outstanding.
+Local validation covers Linux x86_64 with Neovim 0.12.0 and 0.12.5. The manifest
+also identifies macOS and Windows artifacts; native tests on those platforms
+remain outstanding. See [integration acceptance](tests/ACCEPTANCE.md) for
+commands and explicitly unexecuted platform placeholders.
 
 ## Installation
 
