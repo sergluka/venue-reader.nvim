@@ -80,6 +80,13 @@ results omitted by server limits.
 ==============================================================================
 Troubleshooting                                *venue-reader-troubleshooting*
 
+Another FIX plugin loaded first ~
+fix.nvim and venue-reader.nvim share a load marker. The first plugin to load
+wins; the second warns once and skips initialization. A blocked setup() does
+nothing. Disable the unwanted plugin in your plugin manager and restart Nvim.
+Runtimepath entries remain, so installed Tree-sitter queries can still be found.
+The guard does not detect other FIX plugins or independently configured clients.
+
 No LSP attachment ~
 Check filetype=fix, normal buffer type, an explicit buffer name and native LSP
 enablement. Run :VenueReader status and :checkhealth venue-reader. A buffer can

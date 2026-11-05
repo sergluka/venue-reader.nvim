@@ -1,3 +1,13 @@
+-- TODO: Remove this compatibility guard after 2027-02-05.
+if vim.g.fix_plugin_owner == "fix.nvim" then
+  vim.notify_once(
+    "venue-reader.nvim is disabled because fix.nvim is already loaded.",
+    vim.log.levels.WARN
+  )
+  return { setup = function() end }
+end
+vim.g.fix_plugin_owner = "venue-reader.nvim" -- luacheck: ignore 122
+
 local M = {}
 
 local Commands = require("venue-reader.commands")
