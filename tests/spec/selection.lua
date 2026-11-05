@@ -7,47 +7,70 @@ local function child(lines)
   local process = MiniTest.new_child_neovim()
   process.start({ "-u", "NONE", "-i", "NONE" })
   MiniTest.finally(process.stop)
-  process.lua(
-    [[
-    local root, lines = ...
-    vim.opt.runtimepath:prepend(root)
+  process.lua_func(function(directory, input_lines)
+    vim.opt.runtimepath:prepend(directory)
     _G.Selection = require("venue-reader.selection")
-    vim.o.clipboard = ""
-    vim.g.clipboard = { name = "test", copy = { ["+"] = function() end,
-      ["*"] = function() end }, paste = { ["+"] = function() return {{}, "v"} end,
-      ["*"] = function() return {{}, "v"} end } }
-    vim.o.virtualedit = "block"
-    vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+    vim.api.nvim_set_option_value("clipboard", "", {})
+    vim.api.nvim_set_var("clipboard", {
+      name = "test",
+      copy = { ["+"] = function() end, ["*"] = function() end },
+      paste = {
+        ["+"] = function()
+          return { {}, "v" }
+        end,
+        ["*"] = function()
+          return { {}, "v" }
+        end,
+      },
+    })
+    vim.api.nvim_set_option_value("virtualedit", "block", {})
+    vim.api.nvim_buf_set_lines(0, 0, -1, false, input_lines)
     _G.texts = function(ranges, encoding)
       local result = {}
       for _, range in ipairs(ranges) do
         local first, last = range.start, range["end"]
         local first_text = vim.api.nvim_buf_get_lines(0, first.line, first.line + 1, true)[1]
         local last_text = vim.api.nvim_buf_get_lines(0, last.line, last.line + 1, true)[1]
-        result[#result + 1] = vim.api.nvim_buf_get_text(0, first.line,
-          vim.str_byteindex(first_text, encoding, first.character, false), last.line,
-          vim.str_byteindex(last_text, encoding, last.character, false), {})
+        result[#result + 1] = vim.api.nvim_buf_get_text(
+          0,
+          first.line,
+          vim.str_byteindex(first_text, encoding, first.character, false),
+          last.line,
+          vim.str_byteindex(last_text, encoding, last.character, false),
+          {}
+        )
       end
       return result
     end
     _G.capture = function(options, encoding)
-      _G.saved = Selection.capture(options)
-      _G.ranges = Selection.ranges(saved, encoding or "utf-8")
-      return texts(ranges, encoding or "utf-8")
+      _G.saved = _G.Selection.capture(options)
+      _G.ranges = _G.Selection.ranges(_G.saved, encoding or "utf-8")
+      return _G.texts(_G.ranges, encoding or "utf-8")
     end
-    _G.operator = function(kind) capture({mode = kind, operator = true}) end
-    vim.go.operatorfunc = "v:lua.operator"
+    _G.operator = function(kind)
+      _G.capture({ mode = kind, operator = true })
+    end
+    vim.api.nvim_set_option_value("operatorfunc", "v:lua.operator", { scope = "global" })
     _G.state = function()
-      return { cursor = vim.fn.getpos("."), view = vim.fn.winsaveview(),
-        anchor = vim.fn.getpos("v"), first = vim.fn.getpos("'<"), last = vim.fn.getpos("'>"),
-        operator_first = vim.fn.getpos("'["), operator_last = vim.fn.getpos("']"),
-        local_virtualedit = vim.api.nvim_get_option_value("virtualedit", {win=0,scope="local"}),
-        global_virtualedit = vim.go.virtualedit, selection = vim.o.selection,
-        tabstop = vim.bo.tabstop, vartabstop = vim.bo.vartabstop }
+      return {
+        cursor = vim.fn.getpos("."),
+        view = vim.fn.winsaveview(),
+        anchor = vim.fn.getpos("v"),
+        first = vim.fn.getpos("'<"),
+        last = vim.fn.getpos("'>"),
+        operator_first = vim.fn.getpos("'["),
+        operator_last = vim.fn.getpos("']"),
+        local_virtualedit = vim.api.nvim_get_option_value(
+          "virtualedit",
+          { win = 0, scope = "local" }
+        ),
+        global_virtualedit = vim.go.virtualedit,
+        selection = vim.o.selection,
+        tabstop = vim.bo.tabstop,
+        vartabstop = vim.bo.vartabstop,
+      }
     end
-  ]],
-    { assert(vim.env.VENUE_READER_TEST_ROOT), lines }
-  )
+  end, assert(vim.env.VENUE_READER_TEST_ROOT), lines)
   return process
 end
 
@@ -214,11 +237,20 @@ tests["captured state invalidates on source URI or geometry options changes"] = 
   equal(process.lua_get("Selection.valid(saved)"), true)
   process.o.selection = "exclusive"
   equal(process.lua_get("Selection.valid(saved)"), false)
-  process.lua("capture(); vim.bo.tabstop = 3")
+  process.lua_func(function()
+    _G.capture()
+    vim.api.nvim_set_option_value("tabstop", 3, { buf = 0 })
+  end)
   equal(process.lua_get("Selection.valid(saved)"), false)
-  process.lua("capture(); vim.api.nvim_buf_set_name(0,'/tmp/selection-renamed.fix')")
+  process.lua_func(function()
+    _G.capture()
+    vim.api.nvim_buf_set_name(0, "/tmp/selection-renamed.fix")
+  end)
   equal(process.lua_get("Selection.valid(saved)"), false)
-  process.lua("capture(); vim.api.nvim_buf_set_lines(0,0,1,false,{'changed'})")
+  process.lua_func(function()
+    _G.capture()
+    vim.api.nvim_buf_set_lines(0, 0, 1, false, { "changed" })
+  end)
   equal(process.lua_get("Selection.valid(saved)"), false)
 end
 

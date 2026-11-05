@@ -9,30 +9,29 @@ local function child()
   local process = MiniTest.new_child_neovim()
   process.start({ "-u", "NONE", "-i", "NONE" })
   MiniTest.finally(process.stop)
-  process.lua(
-    [[
-    local root = ...
-    vim.opt.runtimepath:prepend(root)
+
+  process.lua_func(function(directory)
+    vim.opt.runtimepath:prepend(directory)
     _G.setup = function()
       require("venue-reader").setup({
-        server = { auto_install = false }, summary = { mode = "off" },
+        server = { auto_install = false },
+        summary = { mode = "off" },
       })
     end
-  ]],
-    { assert(vim.env.VENUE_READER_TEST_ROOT) }
-  )
+  end, assert(vim.env.VENUE_READER_TEST_ROOT))
   return process
 end
 
 tests["setup links native value types and supplies background-only group defaults"] = function()
   local process = child()
-  process.lua([[
+
+  process.lua_func(function()
     local sources = { "DiffAdd", "DiffChange", "DiffDelete", "DiffText", "Pmenu", "Folded" }
     for index, source in ipairs(sources) do
       vim.api.nvim_set_hl(0, source, { fg = 0xFFFFFF, bg = 0x101010 + index, bold = true })
     end
-    setup()
-  ]])
+    _G.setup()
+  end)
   for _, kind in ipairs({ "price", "quantity", "money", "timestamp" }) do
     equal(process.api.nvim_get_hl(0, { name = "@lsp.type." .. kind .. ".fix", link = true }), {
       default = true,
@@ -63,7 +62,10 @@ tests["setup and colorscheme preserve explicitly defined user styles"] = functio
   process.api.nvim_set_hl(0, group, group_style)
   local before_value = process.api.nvim_get_hl(0, { name = price, link = false })
   local before_group = process.api.nvim_get_hl(0, { name = group, link = false })
-  process.lua("setup(); setup()")
+  process.lua_func(function()
+    _G.setup()
+    _G.setup()
+  end)
   process.api.nvim_exec_autocmds("ColorScheme", { pattern = "user-theme" })
   equal(process.api.nvim_get_hl(0, { name = price, link = false }), before_value)
   equal(process.api.nvim_get_hl(0, { name = group, link = false }), before_group)
@@ -71,12 +73,12 @@ end
 
 tests["colorscheme restores cleared defaults using new theme backgrounds"] = function()
   local process = child()
-  process.lua([[
-    setup()
+  process.lua_func(function()
+    _G.setup()
     vim.cmd("highlight clear")
     vim.api.nvim_set_hl(0, "DiffAdd", { fg = 0x010203, bg = 0x334455, reverse = true })
     vim.api.nvim_exec_autocmds("ColorScheme", { pattern = "new-theme" })
-  ]])
+  end)
   equal(
     process.api.nvim_get_hl(0, { name = "@lsp.type.price.fix", link = true }),
     { default = true, link = "@number" }
@@ -89,11 +91,11 @@ end
 
 tests["cterm-only theme background remains usable without a forced foreground"] = function()
   local process = child()
-  process.lua([[
-    vim.o.termguicolors = false
+  process.lua_func(function()
+    vim.api.nvim_set_option_value("termguicolors", false, {})
     vim.api.nvim_set_hl(0, "DiffAdd", { ctermfg = 1, ctermbg = 4 })
-    setup()
-  ]])
+    _G.setup()
+  end)
   equal(
     process.api.nvim_get_hl(0, { name = "@lsp.typemod.group.group1a.fix", link = false }),
     { default = true, ctermbg = 4 }
@@ -102,13 +104,13 @@ end
 
 tests["visual selection stays visible over nested group backgrounds"] = function()
   local process = child()
-  process.lua([[
-    vim.o.termguicolors = true
+  process.lua_func(function()
+    vim.api.nvim_set_option_value("termguicolors", true, {})
     -- Terminal attributes must not mask identical RGB colours in screen comparisons.
     local visual = vim.api.nvim_get_hl(0, { name = "Visual", link = false })
     vim.api.nvim_set_hl(0, "Visual", { bg = visual.bg })
     vim.api.nvim_buf_set_lines(0, 0, -1, false, { "abcdefgh", "abcdefgh" })
-    setup()
+    _G.setup()
     local namespace = vim.api.nvim_create_namespace("highlight-test")
     for index, modifier in ipairs({ "group2b", "group3b" }) do
       vim.api.nvim_buf_set_extmark(0, namespace, index - 1, 0, {
@@ -117,7 +119,7 @@ tests["visual selection stays visible over nested group backgrounds"] = function
         priority = vim.hl.priorities.semantic_tokens + 2,
       })
     end
-  ]])
+  end)
   for row = 1, 2 do
     process.type_keys("<Esc>", row .. "G0vlll")
     local screenshot = process.get_screenshot()

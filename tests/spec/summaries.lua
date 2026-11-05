@@ -298,41 +298,33 @@ local function screen_child()
   local child = MiniTest.new_child_neovim()
   child.start({ "-u", "NONE", "-i", "NONE" })
   MiniTest.finally(child.stop)
-  child.lua(
-    [[
-      local root = ...
-      vim.opt.runtimepath:prepend(root)
-      vim.opt.runtimepath:prepend(root .. "/.test-deps/mini.test")
-      package.path = root .. "/?.lua;" .. root .. "/?/init.lua;" .. package.path
-      vim.o.lines = 12
-      vim.o.columns = 42
-      vim.o.laststatus = 0
-      vim.o.ruler = false
-      vim.o.showmode = false
-      vim.o.signcolumn = "no"
-    ]],
-    { assert(vim.env.VENUE_READER_TEST_ROOT) }
-  )
+  child.lua_func(function(root)
+    vim.opt.runtimepath:prepend(root)
+    vim.opt.runtimepath:prepend(root .. "/.test-deps/mini.test")
+    package.path = root .. "/?.lua;" .. root .. "/?/init.lua;" .. package.path
+    vim.api.nvim_set_option_value("lines", 12, {})
+    vim.api.nvim_set_option_value("columns", 42, {})
+    vim.api.nvim_set_option_value("laststatus", 0, {})
+    vim.api.nvim_set_option_value("ruler", false, {})
+    vim.api.nvim_set_option_value("showmode", false, {})
+    vim.api.nvim_set_option_value("signcolumn", "no", {})
+  end, assert(vim.env.VENUE_READER_TEST_ROOT))
   return child
 end
 
 for _, mode in ipairs({ "front", "above" }) do
   tests[mode .. " screen shows first-line Unicode summary exactly once"] = function()
     local child = screen_child()
-    child.lua(
-      [[
-      local mode = ...
-      local Ui = require("tests.support.summary_ui")
-      local context = Ui.fixture(mode)
-      Ui.reply(context)
-      Ui.configuration(context)
+    child.lua_func(function(selected_mode)
+      local SummaryUi = require("tests.support.summary_ui")
+      local context = SummaryUi.fixture(selected_mode)
+      SummaryUi.reply(context)
+      SummaryUi.configuration(context)
       require("tests.support.lsp").wait(function()
-        return #Ui.marks(context.buffer) == 1
+        return #SummaryUi.marks(context.buffer) == 1
       end, "screen summary")
       vim.cmd("redraw!")
-    ]],
-      { mode }
-    )
+    end, mode)
     local screenshot = child.get_screenshot()
     local lines = vim.tbl_map(function(line)
       return table.concat(line)
@@ -352,12 +344,14 @@ end
 
 tests["above preserves two windows with different scroll and fold state"] = function()
   local child = screen_child()
-  child.lua([[
-    local Ui = require("tests.support.summary_ui")
-    local Lsp = require("tests.support.lsp")
+  child.lua_func(function()
+    local SummaryUi = require("tests.support.summary_ui")
+    local ChildLsp = require("tests.support.lsp")
     local lines = {}
-    for index = 1, 40 do lines[index] = "row " .. index .. " 8=FIX.4.4|35=0|" end
-    local context = Ui.fixture("above", lines)
+    for index = 1, 40 do
+      lines[index] = "row " .. index .. " 8=FIX.4.4|35=0|"
+    end
+    local context = SummaryUi.fixture("above", lines)
     vim.cmd("setlocal foldmethod=manual nowrap")
     vim.cmd("5,15fold")
     vim.cmd("vsplit")
@@ -369,22 +363,24 @@ tests["above preserves two windows with different scroll and fold state"] = func
     vim.api.nvim_win_set_cursor(later, { 25, 0 })
     vim.cmd("normal! zt")
     local before = vim.fn.winsaveview()
-    Ui.refresh(context)
-    local result = Ui.hints(context, "FIRST")
+    SummaryUi.refresh(context)
+    local result = SummaryUi.hints(context, "FIRST")
     result[1].label = "FIRST"
     local second = vim.deepcopy(result[1])
     second.position.line = 24
     second.label = "LATER"
     table.insert(result, second)
-    Ui.reply(context, result)
-    Ui.configuration(context)
-    Lsp.wait(function() return #Ui.marks(context.buffer) == 2 end, "two-window summary")
+    SummaryUi.reply(context, result)
+    SummaryUi.configuration(context)
+    ChildLsp.wait(function()
+      return #SummaryUi.marks(context.buffer) == 2
+    end, "two-window summary")
     local after = vim.fn.winsaveview()
     assert(after.topline == before.topline)
     assert(after.lnum == before.lnum and after.leftcol == before.leftcol)
     assert(vim.fn.foldclosed(5) == 5)
     assert(vim.wo.wrap == false)
-  ]])
+  end)
   local screenshot = child.get_screenshot()
   local screen = table.concat(
     vim.tbl_map(function(line)
@@ -399,23 +395,19 @@ end
 for _, wrap in ipairs({ true, false }) do
   tests["front long summary preserves wrap=" .. tostring(wrap) .. " and raw buffer"] = function()
     local child = screen_child()
-    child.lua(
-      [[
-      local wrap = ...
-      local Ui = require("tests.support.summary_ui")
-      local context = Ui.fixture("front")
-      vim.wo.wrap = wrap
+    child.lua_func(function(selected_wrap)
+      local SummaryUi = require("tests.support.summary_ui")
+      local context = SummaryUi.fixture("front")
+      vim.api.nvim_set_option_value("wrap", selected_wrap, { win = 0 })
       local original = vim.api.nvim_buf_get_lines(context.buffer, 0, -1, false)
-      Ui.reply(context, Ui.hints(context, "LONGSUMMARY_" .. string.rep("x", 100)))
-      Ui.configuration(context)
+      SummaryUi.reply(context, SummaryUi.hints(context, "LONGSUMMARY_" .. string.rep("x", 100)))
+      SummaryUi.configuration(context)
       require("tests.support.lsp").wait(function()
-        return #Ui.marks(context.buffer) == 1
+        return #SummaryUi.marks(context.buffer) == 1
       end, "long summary")
       assert(vim.deep_equal(original, vim.api.nvim_buf_get_lines(context.buffer, 0, -1, false)))
-      assert(vim.wo.wrap == wrap)
-    ]],
-      { wrap }
-    )
+      assert(vim.wo.wrap == selected_wrap)
+    end, wrap)
     local screen = table.concat(
       vim.tbl_map(function(line)
         return table.concat(line)
@@ -428,7 +420,10 @@ for _, wrap in ipairs({ true, false }) do
     else
       assert(count <= 1 and screen:find("xxxxxxxx", 1, true), screen)
     end
-    child.lua([[require("venue-reader").summary("off");vim.cmd("redraw!")]])
+    child.lua_func(function()
+      require("venue-reader").summary("off")
+      vim.cmd("redraw!")
+    end)
     screen = table.concat(
       vim.tbl_map(function(line)
         return table.concat(line)
@@ -442,23 +437,25 @@ end
 
 tests["codelens screen shows native title without owned summary marks"] = function()
   local child = screen_child()
-  child.lua([[
-    local Ui = require("tests.support.summary_ui")
-    local context = Ui.fixture("codelens")
+  child.lua_func(function()
+    local SummaryUi = require("tests.support.summary_ui")
+    local context = SummaryUi.fixture("codelens")
     vim.cmd("redraw!")
-    local request = Ui.wait_request(context.transport, "textDocument/codeLens")
+    local request = SummaryUi.wait_request(context.transport, "textDocument/codeLens")
     context.transport:reply(request.id, {
-      { range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } },
-        command = { title = "NATIVE LENS", command = "" } },
+      {
+        range = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } },
+        command = { title = "NATIVE LENS", command = "" },
+      },
     })
     vim.wait(30)
-    Ui.configuration(context, {
+    SummaryUi.configuration(context, {
       ["messageSummary.channels.inlayHints"] = false,
       ["messageSummary.channels.codeLens"] = true,
     })
-    assert(#Ui.marks(context.buffer) == 0)
+    assert(#SummaryUi.marks(context.buffer) == 0)
     vim.cmd("redraw!")
-  ]])
+  end)
   local screen = table.concat(
     vim.tbl_map(function(line)
       return table.concat(line)
