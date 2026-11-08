@@ -5,7 +5,7 @@ local tests = MiniTest.new_set()
 local root = assert(vim.env.VENUE_READER_TEST_ROOT)
 local manifest = require("venue-reader.release")
 local equal = MiniTest.expect.equality
-local major, minor, patch = manifest.version:match("^(%d+)%.(%d+)%.(%d+)$")
+local major, minor, patch = (manifest.series .. ".0"):match("^(%d+)%.(%d+)%.(%d+)$")
 local compatible_patch = manifest.series .. "." .. (tonumber(patch) + 1)
 local other_minor = major .. "." .. (tonumber(minor) + 1) .. ".0"
 local unsupported_versions = {
@@ -112,7 +112,7 @@ tests["compatible PATH server is reused without installation"] = function()
   local server = isolated(function(command)
     equal(command, { "/existing/venue-reader", "--version" })
     probes = probes + 1
-    return nil, "venue-reader " .. manifest.version .. "\n"
+    return nil, "venue-reader " .. compatible_patch .. "\n"
   end)
   local exepath = vim.fn.exepath
   rawset(vim.fn, "exepath", function(name)
@@ -121,7 +121,7 @@ tests["compatible PATH server is reused without installation"] = function()
   local result = resolve(server, {})
   equal(result.error, nil)
   equal(result.argv, { "/existing/venue-reader", "--stdio" })
-  equal(result.version, manifest.version)
+  equal(result.version, compatible_patch)
   equal(probes, 1)
 end
 
@@ -134,7 +134,22 @@ tests["manual mode with no installed binary never starts a subprocess"] = functi
   equal(server.status().state, "failed")
 end
 
+tests["incompatible release pin is rejected before download"] = function()
+  if manifest.pinned then
+    MiniTest.skip("Pinned release matches supported series")
+  end
+  local server = isolated(function()
+    error("No subprocess expected")
+  end)
+  assert(resolve(server, {}).error:find("No compatible release pinned", 1, true))
+end
+
 local function archive_fixture(bad_hash, failure)
+  if not manifest.pinned then
+    MiniTest.skip(
+      "Compatible release is not pinned; archive installation verification pending release"
+    )
+  end
   local system = vim.uv.os_uname()
   if system.sysname ~= "Linux" or system.machine ~= "x86_64" then
     MiniTest.skip("Local released archive fixture requires Linux x86_64")

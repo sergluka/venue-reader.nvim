@@ -56,7 +56,7 @@ Configuration                                      *venue-reader-options*
 Defaults: >lua
     require("venue-reader").setup({
       server = { auto_install = true },
-      summary = { mode = "front", highlight = "VenueReaderSummary" },
+      summary = { mode = "front", semantic_highlighting = true },
       commands = { timeout_ms = 5000 },
       treesitter = { enabled = true, auto_install = true },
       settings = { fix = {} },
@@ -83,9 +83,11 @@ Omit treesitter.enabled=false to allow compatible parser reuse and automatic
 grammar installation when the optional manager is available. LSP does not wait
 for grammar installation.
 
-summary.mode / summary.highlight ~
-Modes are front (default), above, codelens and off. The configurable highlight
-applies to custom front/above summaries. Native CodeLens uses LspCodeLens.
+summary.mode / summary.semantic_highlighting ~
+Modes are front (default), above, hidden, codelens and off. Semantic summary
+colors default to true; false uses only VenueReaderSummary. Set that base group
+to supply a background or uniform styling. Source semantic highlighting is
+independent. Native CodeLens uses LspCodeLens.
 See |venue-reader-modes| and |venue-reader-styling|.
 
 commands.timeout_ms ~
@@ -105,10 +107,11 @@ reference rather than a second plugin-specific schema:
 https://github.com/sergluka/venue-reader/wiki/Configuration
 https://github.com/sergluka/venue-reader/wiki/Configuration-Reference
 
-Mode selection sets fix.messageSummary.channels.inlayHints and codeLens.
-Contradictory explicit setup values are rejected. Project/modeline conflicts
-are reported in status/health with their sources; they are not overridden.
-See |venue-reader-summary-gates|.
+Mode selection sets fix.messageSummary.channels.inlayHints and codeLens. It
+also sets fix.messageSummary.semanticTokens from the mode and
+summary.semantic_highlighting. Contradictory explicit setup values are
+rejected. Project/modeline conflicts are reported in status/health with their
+sources; they are not overridden. See |venue-reader-summary-gates|.
 
 treesitter.enabled / treesitter.auto_install ~
 Optional syntax defaults to enabled with automatic installation allowed.
@@ -125,7 +128,10 @@ command fails rather than selecting another executable.
 
 If no binary is found and auto_install is true, the pinned release installs
 asynchronously under stdpath("data")/venue-reader/. The adapter verifies SHA-256
-before extraction. Compatible installations are reused without automatic
+before extraction. This development branch requires a compatible local binary
+through server.cmd until a compatible release is pinned. The required series
+is stored separately from artifact metadata in release.json; an incompatible
+pin is rejected before downloading. Compatible installations are reused without automatic
 upgrades, PATH changes or replacement of external installations.
 
 Automatic installation tools ~

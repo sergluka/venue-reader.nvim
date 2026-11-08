@@ -13,6 +13,9 @@ and navigation. It is not required for LSP features.
 ## Installation
 
 Choose one method. The repository is currently private; GitHub access is required.
+This development branch requires a compatible local server through `server.cmd`.
+The pinned release does not yet support structured summaries; automatic
+installation reports this until a compatible release is pinned.
 
 ### LazyVim
 
@@ -141,13 +144,27 @@ Choose a mode with `:VenueReader summary above`, or set `summary.mode`:
 | --- | --- | --- |
 | `front` (default) | Inline before the raw message | `VenueReaderSummary` |
 | `above` | Virtual line above the message | Same custom styling as front |
+| `hidden` | No annotation; summary available to UI components | Same semantic data |
 | `codelens` | Native CodeLens above the message | `LspCodeLens` |
 | `off` | No summary | Other LSP features remain available |
 
 The server supplies the same summary text/details through either channel.
-Custom modes currently use one summary highlight. Native field hints use
-`LspInlayHint`; semantic highlights can alternate backgrounds for repeating-group
-entries while preserving field foregrounds.
+Front/above parts use the server semantic types over the `VenueReaderSummary`
+base group, which can supply a background. Set
+`summary.semantic_highlighting = false` for uniform base styling. Native field
+hints use `LspInlayHint`; semantic highlights can alternate backgrounds for
+repeating-group entries while preserving field foregrounds.
+
+Use the cached current message summary in another UI component:
+
+```lua
+-- A winbar expression; the plugin does not own your winbar settings.
+vim.wo.winbar = '%!v:lua.require("venue-reader").current_summary({format="statusline"})'
+```
+
+`current_summary()` returns plain text; `format = "chunks"` returns native virtual
+text chunks. The accessor also works alongside front/above modes and sends no
+requests on cursor movement. See `:help venue-reader-current-summary`.
 
 ![Repeating-group entries use alternating backgrounds at each nesting level.](docs/group-colours.svg)
 
@@ -181,3 +198,6 @@ read that checkout locally or use the bundled help.
 Development commands and platform acceptance status are in
 [Contributing](https://github.com/sergluka/venue-reader.nvim/wiki/Contributing),
 `:help venue-reader-development` and [tests/ACCEPTANCE.md](tests/ACCEPTANCE.md).
+
+For paired source worktrees, run `make dev` from the plugin checkout; the server
+worktree is selected by matching Git branch names. See `:help venue-reader-dev-launcher`.

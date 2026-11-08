@@ -5,6 +5,7 @@ local types = {
   quantity = "@number",
   money = "@number",
   timestamp = "@string",
+  flag = "DiagnosticWarn",
 }
 local groups = {
   group1a = "DiffAdd",
@@ -18,6 +19,9 @@ local groups = {
 local function apply()
   for kind, target in pairs(types) do
     vim.api.nvim_set_hl(0, "@lsp.type." .. kind .. ".fix", { default = true, link = target })
+  end
+  for modifier, target in pairs({ peer1 = "Identifier", peer2 = "Special" }) do
+    vim.api.nvim_set_hl(0, "@lsp.mod." .. modifier .. ".fix", { default = true, link = target })
   end
   for modifier, source in pairs(groups) do
     local style = vim.api.nvim_get_hl(0, { name = source, link = false })

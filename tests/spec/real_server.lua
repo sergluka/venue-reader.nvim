@@ -78,4 +78,49 @@ tests["plugin default summaries and native mode transitions use the released ser
   equal(Plugin.status(buffer).annotations.mode, "off")
 end
 
+tests["local server supplies colored cached hidden summaries in one native response"] = function()
+  local plugin = require("venue-reader")
+  local binary = assert(vim.env.VENUE_READER_TEST_SERVER)
+  plugin.setup({
+    server = { cmd = { binary, "--stdio" } },
+    treesitter = { enabled = false },
+    summary = { mode = "hidden" },
+    settings = {
+      fix = {
+        messageSummary = {
+          template = '{34?:"?"} {35.valueName} {43="Y"?"[POSS DUP]"}',
+          details = false,
+        },
+      },
+    },
+  })
+  MiniTest.finally(function()
+    vim.lsp.enable("venue_reader", false)
+    for _, client in ipairs(vim.lsp.get_clients({ name = "venue_reader" })) do
+      client:stop(true)
+    end
+  end)
+  local buffer = Lsp.buffer({ "8=FIX.4.4|35=0|34=42|43=Y|" })
+  vim.api.nvim_set_current_buf(buffer)
+  Lsp.wait(function()
+    return plugin.current_summary() == "42 Heartbeat [POSS DUP]"
+  end, "structured summary from actual server")
+  local chunks = plugin.current_summary({ format = "chunks" })
+  equal(chunks[1][1], "42")
+  assert(
+    vim.tbl_contains(chunks[1][2], "@lsp.type.number")
+      or vim.tbl_contains(chunks[1][2], "@lsp.type.number.fix")
+  )
+  equal(chunks[2][2], { "VenueReaderSummary" })
+  equal(chunks[#chunks][1], "[POSS DUP]")
+  assert(vim.tbl_contains(chunks[#chunks][2], "@lsp.type.flag.fix"))
+  local namespace = vim.api.nvim_create_namespace("venue-reader.summary")
+  vim.cmd("redraw!")
+  equal(vim.api.nvim_buf_get_extmarks(buffer, namespace, 0, -1, {}), {})
+  local client = vim.lsp.get_clients({ name = "venue_reader", bufnr = buffer })[1]
+  local requests = vim.deepcopy(client.requests)
+  equal(plugin.current_summary(), "42 Heartbeat [POSS DUP]")
+  equal(client.requests, requests)
+end
+
 return tests

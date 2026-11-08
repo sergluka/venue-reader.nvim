@@ -2,19 +2,27 @@ local M = {}
 
 local namespace = vim.api.nvim_create_namespace("venue-reader.summary")
 local documents = {}
-local options = { mode = "off", highlight = "VenueReaderSummary" }
+local options = { mode = "off", semantic_highlighting = true }
+local Styles = require("venue-reader.summary_styles")
 local managed
 local generation = 0
 local queued = false
-local channels = {
-  front = { inlayHints = true, codeLens = false },
-  above = { inlayHints = true, codeLens = false },
-  codelens = { inlayHints = false, codeLens = true },
-  off = { inlayHints = false, codeLens = false },
+local modes = {
+  front = { channels = { inlayHints = true, codeLens = false }, draw = "inline" },
+  above = { channels = { inlayHints = true, codeLens = false }, draw = "above" },
+  hidden = { channels = { inlayHints = true, codeLens = false }, draw = false },
+  codelens = { channels = { inlayHints = false, codeLens = true }, draw = false },
+  off = { channels = { inlayHints = false, codeLens = false }, draw = false },
 }
 
+-- Custom summaries arrive as inlay hints, so that channel flag selects the custom modes.
 local function custom()
-  return options.mode == "front" or options.mode == "above"
+  return modes[options.mode].channels.inlayHints
+end
+
+local function styled(state)
+  return options.semantic_highlighting
+    and state.configuration.effective["messageSummary.semanticTokens"] ~= false
 end
 
 local function clear(buffer)
@@ -58,7 +66,7 @@ local function problem(state, buffer)
   if effective["messageSummary.enabled"] == false then
     return "messageSummary.enabled is disabled by effective server configuration"
   end
-  for key, expected in pairs(channels[options.mode]) do
+  for key, expected in pairs(modes[options.mode].channels) do
     local setting = "messageSummary.channels." .. key
     if effective[setting] ~= expected then
       local source = state.configuration.sources and state.configuration.sources[setting]
@@ -80,7 +88,7 @@ local function problem(state, buffer)
 end
 
 local function valid(state, buffer, client_id)
-  return state.hints
+  return state.rows
     and state.tick == vim.api.nvim_buf_get_changedtick(buffer)
     and state.uri == vim.uri_from_bufnr(buffer)
     and state.generation == generation
@@ -109,12 +117,8 @@ local function redraw()
       if doc and vim.lsp.inlay_hint.is_enabled({ bufnr = buffer }) then
         local first_line = false
         for client_id, state in pairs(doc.clients) do
-          if valid(state, buffer, client_id) then
-            for _, hint in ipairs(state.hints) do
-              if hint.position.line == 0 then
-                first_line = true
-              end
-            end
+          if valid(state, buffer, client_id) and state.rows[0] then
+            first_line = true
           end
         end
         if first_line then
@@ -175,23 +179,27 @@ local function configure_document(client, buffer, state)
 end
 
 function M.settings(summary, settings)
+  local mode = type(summary) == "table" and modes[summary.mode]
+  assert(mode, "summary.mode: use front, above, hidden, codelens or off")
+  assert(summary.highlight == nil, "summary.highlight was removed; use VenueReaderSummary")
   assert(
-    type(summary) == "table" and channels[summary.mode],
-    "summary.mode: use front, above, codelens or off"
+    type(summary.semantic_highlighting) == "boolean",
+    "summary.semantic_highlighting must be boolean"
   )
-  assert(type(summary.highlight) == "string", "summary.highlight must be a highlight group")
   local result = vim.deepcopy(settings)
   result.fix = result.fix or {}
   local configured = result.fix.messageSummary or {}
-  for key, expected in pairs(channels[summary.mode]) do
+  for key, expected in pairs(mode.channels) do
     local explicit = configured.channels and configured.channels[key]
     assert(
       explicit == nil or explicit == expected,
       "settings.fix.messageSummary.channels." .. key .. " contradicts summary.mode"
     )
   end
-  result.fix.messageSummary =
-    vim.tbl_deep_extend("force", configured, { channels = channels[summary.mode] })
+  result.fix.messageSummary = vim.tbl_deep_extend("force", configured, {
+    channels = mode.channels,
+    semanticTokens = summary.semantic_highlighting and mode.channels.inlayHints,
+  })
   return result
 end
 
@@ -235,20 +243,34 @@ function M.handler(err, result, ctx)
   then
     return
   end
-  state.hints = {}
+  state.rows = {}
+  local line_count = vim.api.nvim_buf_line_count(ctx.bufnr)
   for _, hint in ipairs(summaries) do
     if
-      hint.data.uri == request.uri
-      and hint.data.version == ctx.version
+      type(hint.position) == "table"
       and hint.position.character == 0
+      and type(hint.position.line) == "number"
+      and hint.position.line >= 0
+      and hint.position.line < line_count
     then
-      table.insert(state.hints, hint)
+      state.rows[hint.position.line] = hint
     end
   end
   state.tick, state.uri, state.generation = request.tick, request.uri, generation
   doc.revision = doc.revision + 1
   configure_document(vim.lsp.get_client_by_id(ctx.client_id), ctx.bufnr, state)
   redraw()
+end
+
+local function styling(state)
+  if not state or not state.configuration or not options.semantic_highlighting or not custom() then
+    return nil
+  end
+  if state.configuration.effective["messageSummary.semanticTokens"] ~= false then
+    return nil
+  end
+  return "Summary semantic metadata is disabled; source: "
+    .. vim.inspect((state.configuration.sources or {})["messageSummary.semanticTokens"])
 end
 
 function M.status(buffer, client_id)
@@ -269,6 +291,7 @@ function M.status(buffer, client_id)
     native_enabled = enabled,
     effective = state and state.configuration and state.configuration.effective,
     problem = warning,
+    styling = styling(state),
     lines = vim.api.nvim_buf_is_valid(buffer) and vim.api.nvim_buf_line_count(buffer) or nil,
   }
 end
@@ -286,7 +309,7 @@ function M.configure(summary, predicate)
   end
   documents = {}
   options = vim.deepcopy(summary)
-  vim.api.nvim_set_hl(0, options.highlight, { default = true, link = "Comment" })
+  vim.api.nvim_set_hl(0, "VenueReaderSummary", { default = true, link = "Comment" })
   for _, client in ipairs(vim.lsp.get_clients({ name = "venue_reader" })) do
     if managed(client) then
       vim.lsp.codelens.enable(false, { client_id = client.id })
@@ -309,7 +332,58 @@ function M.clear(buffer, client_id)
   end
 end
 
+function M.current_summary(value)
+  value = value or {}
+  local format = value.format or "text"
+  assert(format == "text" or format == "chunks" or format == "statusline", "Invalid summary format")
+  local empty = format == "chunks" and {} or ""
+  if not custom() then
+    return empty
+  end
+  local window = value.winid or 0
+  if window == 0 then
+    window = vim.api.nvim_get_current_win()
+  end
+  if not vim.api.nvim_win_is_valid(window) then
+    return empty
+  end
+  local buffer = vim.api.nvim_win_get_buf(window)
+  local doc = documents[buffer]
+  if not doc or not vim.lsp.inlay_hint.is_enabled({ bufnr = buffer }) then
+    return empty
+  end
+  local row = vim.api.nvim_win_get_cursor(window)[1] - 1
+  for client_id, state in pairs(doc.clients) do
+    if state.rows and state.rows[row] and valid(state, buffer, client_id) then
+      local chunks =
+        Styles.chunks(state.rows[row], vim.lsp.get_client_by_id(client_id), styled(state))
+      if format == "chunks" then
+        return chunks
+      end
+      if format == "statusline" then
+        return Styles.statusline(chunks)
+      end
+      local text = {}
+      for index, chunk in ipairs(chunks) do
+        text[index] = chunk[1]
+      end
+      return table.concat(text)
+    end
+  end
+  return empty
+end
+
 local group = vim.api.nvim_create_augroup("venue-reader.summary", { clear = true })
+vim.api.nvim_create_autocmd("ColorScheme", {
+  group = group,
+  callback = function()
+    Styles.clear()
+    for _, doc in pairs(documents) do
+      doc.revision = doc.revision + 1
+    end
+    redraw()
+  end,
+})
 vim.api.nvim_create_autocmd("LspRequest", {
   group = group,
   callback = function(event)
@@ -391,7 +465,8 @@ vim.api.nvim_set_decoration_provider(namespace, {
     if not doc then
       return false
     end
-    local enabled = custom() and vim.lsp.inlay_hint.is_enabled({ bufnr = buffer })
+    local draw = modes[options.mode].draw
+    local enabled = draw and vim.lsp.inlay_hint.is_enabled({ bufnr = buffer })
     local key = doc.revision
       .. ":"
       .. vim.api.nvim_buf_get_changedtick(buffer)
@@ -407,24 +482,13 @@ vim.api.nvim_set_decoration_provider(namespace, {
     end
     for client_id, state in pairs(doc.clients) do
       if valid(state, buffer, client_id) then
-        for _, hint in ipairs(state.hints) do
-          local chunks = {}
-          if hint.paddingLeft then
-            table.insert(chunks, { " ", options.highlight })
-          end
-          if type(hint.label) == "string" then
-            table.insert(chunks, { hint.label, options.highlight })
-          else
-            for _, part in ipairs(hint.label) do
-              table.insert(chunks, { part.value, options.highlight })
-            end
-          end
-          if hint.paddingRight then
-            table.insert(chunks, { " ", options.highlight })
-          end
-          local mark = options.mode == "front" and { virt_text = chunks, virt_text_pos = "inline" }
+        local client = vim.lsp.get_client_by_id(client_id)
+        local semantic = styled(state)
+        for row, hint in pairs(state.rows) do
+          local chunks = Styles.chunks(hint, client, semantic, true)
+          local mark = draw == "inline" and { virt_text = chunks, virt_text_pos = "inline" }
             or { virt_lines = { chunks }, virt_lines_above = true }
-          vim.api.nvim_buf_set_extmark(buffer, namespace, hint.position.line, 0, mark)
+          vim.api.nvim_buf_set_extmark(buffer, namespace, row, 0, mark)
         end
       end
     end

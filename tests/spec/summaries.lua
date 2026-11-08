@@ -94,13 +94,13 @@ tests["late same-version reply cannot replace newer native request"] = function(
   refresh(context)
   local latest = wait_request(context.transport, "textDocument/inlayHint")
   assert(latest.id ~= old.id)
-  context.transport:reply(latest.id, hints(context, "latest"))
+  context.transport:reply(latest.id, hints("latest"))
   vim.wait(30)
   configuration(context)
   Lsp.wait(function()
     return #marks(context.buffer) == 1
   end, "latest summary")
-  context.transport:reply(old.id, hints(context, "old"))
+  context.transport:reply(old.id, hints("old"))
   vim.wait(30)
   local text = vim.inspect(marks(context.buffer))
   assert(text:find("latest", 1, true))
@@ -111,21 +111,9 @@ tests["cancelled response cannot draw custom summary"] = function()
   local context = fixture()
   local request = wait_request(context.transport, "textDocument/inlayHint")
   assert(context.client:cancel_request(request.id))
-  context.transport:reply(request.id, hints(context))
+  context.transport:reply(request.id, hints())
   vim.wait(30)
   equal(#marks(context.buffer), 0)
-end
-
-for _, member in ipairs({ "uri", "version" }) do
-  tests["summary data " .. member .. " mismatch is rejected"] = function()
-    local context = fixture()
-    local result = hints(context)
-    result[1].data[member] = member == "uri" and "file:///wrong.fix" or -1
-    reply(context, result)
-    configuration(context)
-    equal(#marks(context.buffer), 0)
-    equal(#vim.lsp.inlay_hint.get({ bufnr = context.buffer }), 1)
-  end
 end
 
 tests["mode switching clears old marks and changes server channels"] = function()
@@ -164,7 +152,7 @@ tests["edit hides accepted summaries and rejects the outstanding reply"] = funct
   end, "accepted summary")
   refresh(context)
   local old = wait_request(context.transport, "textDocument/inlayHint")
-  local result = hints(context, "stale after edit")
+  local result = hints("stale after edit")
   vim.api.nvim_buf_set_lines(context.buffer, 0, 1, false, { "8=FIX.4.4|35=2|" })
   equal(#marks(context.buffer), 0)
   context.transport:reply(old.id, result)
@@ -364,7 +352,7 @@ tests["above preserves two windows with different scroll and fold state"] = func
     vim.cmd("normal! zt")
     local before = vim.fn.winsaveview()
     SummaryUi.refresh(context)
-    local result = SummaryUi.hints(context, "FIRST")
+    local result = SummaryUi.hints("FIRST")
     result[1].label = "FIRST"
     local second = vim.deepcopy(result[1])
     second.position.line = 24
@@ -400,7 +388,7 @@ for _, wrap in ipairs({ true, false }) do
       local context = SummaryUi.fixture("front")
       vim.api.nvim_set_option_value("wrap", selected_wrap, { win = 0 })
       local original = vim.api.nvim_buf_get_lines(context.buffer, 0, -1, false)
-      SummaryUi.reply(context, SummaryUi.hints(context, "LONGSUMMARY_" .. string.rep("x", 100)))
+      SummaryUi.reply(context, SummaryUi.hints("LONGSUMMARY_" .. string.rep("x", 100)))
       SummaryUi.configuration(context)
       require("tests.support.lsp").wait(function()
         return #SummaryUi.marks(context.buffer) == 1
@@ -490,6 +478,107 @@ tests["conflicting effective CodeLens configuration blocks its native backend"] 
   assert(not vim.lsp.codelens.is_enabled({ client_id = context.client.id }))
   assert(Plugin.status(context.buffer).annotations.problem)
   equal(#marks(context.buffer), 0)
+end
+
+tests["hidden caches row summaries without marks or cursor requests"] = function()
+  local context = fixture("hidden")
+  reply(context)
+  configuration(context)
+  equal(#marks(context.buffer), 0)
+  equal(Plugin.current_summary(), "Heartbeat λ details")
+  local requests = vim.deepcopy(context.transport.pending)
+  vim.api.nvim_win_set_cursor(0, { 2, 0 })
+  equal(Plugin.current_summary(), "")
+  vim.api.nvim_win_set_cursor(0, { 1, 0 })
+  equal(Plugin.current_summary(), "Heartbeat λ details")
+  equal(context.transport.pending, requests)
+  Plugin.summary("off")
+  equal(Plugin.current_summary(), "")
+  equal(Plugin.current_summary({ format = "chunks" }), {})
+end
+
+tests["semantic parts retain base background and preserve null alignment"] = function()
+  local context = fixture()
+  vim.api.nvim_set_hl(0, "VenueReaderSummary", { bg = 0x112233 })
+  vim.api.nvim_set_hl(0, "@lsp.type.number.fix", { fg = 0xff0000 })
+  vim.api.nvim_set_hl(0, "@lsp.type.flag.fix", { fg = 0x00ff00 })
+  local result = hints()
+  result[1].label = { { value = "42" }, { value = " | " }, { value = "100%" }, { value = "end" } }
+  result[1].data.tokens = { { "N", 0 }, vim.NIL, { "B", 0 }, { "invalid", -1 } }
+  reply(context, result)
+  configuration(context)
+  local chunks = Plugin.current_summary({ format = "chunks" })
+  equal(chunks[1][2], { "VenueReaderSummary", "@lsp.type.number.fix" })
+  equal(chunks[2][2], { "VenueReaderSummary" })
+  equal(chunks[3][2], { "VenueReaderSummary", "@lsp.type.flag.fix" })
+  equal(chunks[4][2], { "VenueReaderSummary" })
+  local statusline = Plugin.current_summary({ format = "statusline" })
+  assert(statusline:find("100%%", 1, true))
+  assert(statusline:sub(-2) == "%*")
+  local rendered = vim.api.nvim_eval_statusline(statusline, { highlights = true })
+  equal(rendered.str, "42 | 100%end")
+  local name = statusline:match("%%#(.-)#")
+  local style = vim.api.nvim_get_hl(0, { name = name, link = false })
+  equal(style.bg, 0x112233)
+  equal(style.fg, 0xff0000)
+  vim.api.nvim_set_hl(0, "@lsp.type.number.fix", { fg = 0x123456 })
+  vim.api.nvim_exec_autocmds("ColorScheme", {})
+  statusline = Plugin.current_summary({ format = "statusline" })
+  name = statusline:match("%%#(.-)#")
+  equal(vim.api.nvim_get_hl(0, { name = name, link = false }).fg, 0x123456)
+end
+
+tests["metadata suppression preserves readable summary and reports source"] = function()
+  local context = fixture()
+  local result = hints()
+  result[1].data.tokens = { { "N", 0 }, { "B", 0 } }
+  reply(context, result)
+  configuration(context, { ["messageSummary.semanticTokens"] = false })
+  equal(Plugin.current_summary(), "Heartbeat λ details")
+  for _, chunk in ipairs(Plugin.current_summary({ format = "chunks" })) do
+    equal(chunk[2], { "VenueReaderSummary" })
+  end
+  assert(Plugin.status(context.buffer).annotations.styling:find("disabled", 1, true))
+end
+
+tests["monochrome configuration requests no metadata and accessor follows lifecycle"] = function()
+  local context = fixture()
+  reply(context)
+  configuration(context)
+  assert(context.client.config.capabilities.experimental.venueReader.summaryTokens == 1)
+  local updated = Plugin.status(context.buffer)
+  assert(updated.annotations.mode == "front")
+  Plugin.setup({
+    server = { cmd = { "summary-test", "--stdio" } },
+    summary = { semantic_highlighting = false },
+  })
+  equal(context.client.settings.fix.messageSummary.semanticTokens, false)
+  equal(Plugin.current_summary(), "")
+  reply(context)
+  configuration(context)
+  equal(Plugin.current_summary(), "Heartbeat λ details")
+  equal(Plugin.current_summary({ format = "chunks" })[1][2], { "VenueReaderSummary" })
+  vim.api.nvim_buf_set_lines(context.buffer, 0, 1, false, { "changed" })
+  equal(Plugin.current_summary(), "")
+end
+
+tests["summary parts stack modifier and type-modifier groups in native order"] = function()
+  local context = fixture()
+  vim.api.nvim_set_hl(0, "@lsp.type.number.fix", { fg = 0x111111 })
+  vim.api.nvim_set_hl(0, "@lsp.mod.peer1.fix", { bg = 0x222222 })
+  vim.api.nvim_set_hl(0, "@lsp.typemod.number.peer1.fix", { bold = true })
+  local result = hints()
+  result[1].data.tokens = { { "N", 2 }, { "N", 128 } }
+  reply(context, result)
+  configuration(context)
+  local chunks = Plugin.current_summary({ format = "chunks" })
+  equal(chunks[1][2], {
+    "VenueReaderSummary",
+    "@lsp.type.number.fix",
+    "@lsp.mod.peer1.fix",
+    "@lsp.typemod.number.peer1.fix",
+  })
+  equal(chunks[2][2], { "VenueReaderSummary" })
 end
 
 return tests

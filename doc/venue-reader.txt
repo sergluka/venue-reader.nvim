@@ -63,6 +63,7 @@ syntax mappings are in |venue-reader-mappings| and |venue-reader-navigation|.
 Front summaries appear before raw messages by default. Change placement with:
 >vim
     VenueReader summary above
+    VenueReader summary hidden
     VenueReader summary codelens
     VenueReader summary off
 <

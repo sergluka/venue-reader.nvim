@@ -11,7 +11,7 @@ Wiki: https://github.com/sergluka/venue-reader.nvim/wiki/Commands
 :VenueReader status             Show session/server/annotation/grammar state.
 :VenueReader install server     Explicit server discovery/installation retry.
 :VenueReader install grammar    Explicit optional parser acquisition retry.
-:VenueReader summary {mode}     Select front, above, codelens or off.
+:VenueReader summary {mode}     Select front, above, hidden, codelens or off.
 :VenueReader yank [register]    Decode the cursor field to a text register.
 :[range]VenueReader yank [reg]  Decode an inclusive line range.
 :VenueReader dictionary [name]  Choose or select a server dictionary.
@@ -80,7 +80,8 @@ setup(opts)                    Configure and enable the adapter.
 start(), stop(), restart()     Lifecycle counterparts of the commands above.
 status([bufnr])                Return session/acquisition/annotations/treesitter.
 install([target])              target is "server" (default) or "grammar".
-summary(mode)                  Select one of the four summary modes.
+summary(mode)                  Select a summary mode.
+current_summary(opts)          Cached summary; |venue-reader-current-summary|.
 yank([opts])                   Decode cursor, line or live Visual selection.
 operator()                     Expression mapping for decoded g@ operator.
 dictionary([name])             Choose or select the dictionary.

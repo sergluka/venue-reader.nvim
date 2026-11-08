@@ -5,7 +5,7 @@ export VENUE_READER_TEST_SUITE = $(SUITE)
 export VENUE_READER_TEST_LAZY = $(LAZY)
 export NVIM_LOG_FILE = $(CURDIR)/.test-deps/nvim.log
 
-.PHONY: test prepare prepare-tests smoke-grammar stress lint format
+.PHONY: test prepare prepare-tests smoke-grammar stress lint format dev
 test:
 	@mkdir -p .test-deps
 	"$(NVIM)" --headless -u NONE -i NONE -l scripts/test.lua
@@ -30,3 +30,6 @@ lint:
 
 format:
 	stylua lua tests scripts
+
+dev:
+	NVIM_LOG_FILE= VENUE_READER_DEV_SERVER_DIR="$(SERVER_DIR)" "$(NVIM)" -u scripts/dev.lua

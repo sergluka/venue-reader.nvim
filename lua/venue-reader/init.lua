@@ -10,6 +10,7 @@ vim.g.fix_plugin_owner = "venue-reader.nvim" -- luacheck: ignore 122
 
 local M = {}
 
+local Capabilities = require("venue-reader.capabilities")
 local Commands = require("venue-reader.commands")
 local Highlights = require("venue-reader.highlights")
 local Server = require("venue-reader.server")
@@ -28,7 +29,7 @@ local defaults = {
   commands = { timeout_ms = 5000 },
   treesitter = { enabled = true, auto_install = true },
   settings = { fix = vim.empty_dict() },
-  summary = { mode = "front", highlight = "VenueReaderSummary" },
+  summary = { mode = "front", semantic_highlighting = true },
 }
 
 local function managed(client)
@@ -200,6 +201,10 @@ function M.install(target)
   end, true)
 end
 
+function M.current_summary(value)
+  return Summaries.current_summary(value)
+end
+
 function M.summary(mode)
   local updated = vim.deepcopy(options)
   updated.summary.mode = mode
@@ -310,6 +315,7 @@ function M.setup(value)
     settings = options.settings,
     exit_timeout = 1000,
     before_init = Commands.before_init,
+    capabilities = vim.deepcopy(Capabilities),
     handlers = {
       ["textDocument/inlayHint"] = Summaries.handler,
       ["workspace/configuration"] = Commands.configuration,
@@ -415,7 +421,7 @@ function M.setup(value)
         assert(#arguments >= 2 and #arguments <= 3, "Use tag <number> [value]")
         M.tag(arguments[2], arguments[3])
       elseif action == "summary" then
-        assert(#arguments == 2, "Use summary front|above|codelens|off")
+        assert(#arguments == 2, "Use summary front|above|hidden|codelens|off")
         M.summary(arguments[2])
       elseif action == "install" then
         assert(#arguments == 2, "Use install server|grammar")
@@ -455,6 +461,7 @@ function M.setup(value)
         "install grammar",
         "summary front",
         "summary above",
+        "summary hidden",
         "summary codelens",
         "summary off",
         "yank",

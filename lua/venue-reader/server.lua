@@ -305,6 +305,10 @@ function Server.resolve(options, callback, retry)
       end)
     elseif options.auto_install == false then
       finish("No compatible server; set server.cmd or run :VenueReader install server")
+    elseif not manifest.pinned then
+      finish(
+        "No compatible release pinned yet; set server.cmd to a " .. manifest.series .. ".x binary"
+      )
     else
 
       local function acquire()

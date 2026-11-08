@@ -14,17 +14,24 @@ changes placement and styling. Only one summary backend is active at a time.
     Mode       Placement                  Styling/limits
     front      Before raw message         VenueReaderSummary; inlay range cap
     above      Virtual line above         Same custom styling/content as front
+    hidden     No annotation              Cached summary for UI components
     codelens   Native CodeLens above      LspCodeLens; document cap
     off        No summary                 Other LSP features remain available
 
 front is the default. Above separates summaries from raw fields but uses
 vertical space; front shifts raw text horizontally. Neither changes buffer
-bytes or copied text. Custom modes use one configurable summary highlight.
-Server label parts/padding are preserved, without inferred route/detail colors.
+bytes or copied text. Front/above preserve server label parts and semantic
+metadata. VenueReaderSummary supplies base attributes; semantic type/modifier
+groups supply individual colors. The server assigns pair-relative peer1/peer2
+modifiers to distinct SenderCompID(49)/TargetCompID(56) values; these do not
+identify a local endpoint or reconstruct sessions. Active PossDupFlag(43) = Y
+uses the flag semantic type, defaulting to DiagnosticWarn. peer1/peer2 default
+to Identifier/Special; all groups support normal user overrides.
 CodeLens uses Neovim's renderer; custom placement/highlight settings do not apply.
 
 Switch with: >vim
     VenueReader summary above
+    VenueReader summary hidden
     VenueReader summary codelens
     VenueReader summary off
 <
@@ -39,7 +46,7 @@ viewport requests, split ranges, raise limits or scan FIX in Lua.
 
 Native gates                                      *venue-reader-summary-gates*
 
-Selecting front/above enables native inlay hints on attached FIX buffers.
+Selecting front/above/hidden enables native inlay hints on attached FIX buffers.
 The gate is buffer-wide: other clients' field hints can also become enabled and
 continue to render natively. Explicit native disable is respected until the
 next managed attachment (including rename/restart) or explicit mode activation:
@@ -48,9 +55,11 @@ next managed attachment (including rename/restart) or explicit mode activation:
 <
 CodeLens mode opts into native CodeLens. Native disable is reported without
 automatic mode fallback. Mode changes set fix.messageSummary.channels.inlayHints
-and codeLens. Contradictory explicit setup values are rejected; project/modeline
-settings keep their higher priority. Status/health report effective conflicts
-and sources. Correct the blocking override, then select the mode again.
+and codeLens. They also set fix.messageSummary.semanticTokens from the mode
+and summary.semantic_highlighting. Contradictory explicit setup values are
+rejected; project/modeline settings keep their higher priority. Status/health
+report effective conflicts and sources. Correct the blocking override, then
+select the mode again.
 A coalesced document configuration lookup uses fix.describeOverrides; it does
 not make a request per summary or message.
 
@@ -91,8 +100,40 @@ field hints explicitly if needed: >lua
     vim.lsp.inlay_hint.enable(true, { bufnr = 0 })
 <
 All native inlay labels use LspInlayHint. Group backgrounds color source text,
-not individual virtual labels. Custom summaries use VenueReaderSummary; native
-lenses use LspCodeLens.
+not individual native field labels. Summary parts combine VenueReaderSummary
+with standard semantic groups; native lenses use LspCodeLens.
+
+Cached summary                                  *venue-reader-current-summary*
+
+>lua
+    require("venue-reader").current_summary({ winid = 0, format = "text" })
+<
+winid defaults to the current window. Formats:
+    text         Plain message summary, excluding annotation padding (default).
+    chunks       Virtual-text-compatible {text, highlight_groups} pairs.
+    statusline   Escaped statusline syntax with combined highlights and a reset.
+
+front/above/hidden populate the same row cache. hidden suppresses summary
+annotations while keeping ordinary field hints native. CodeLens/off return an
+empty string (or an empty table for chunks). A row with no accepted summary,
+an edited document, detached client, disabled native inlays, or a server limit
+also returns empty output. Moving the cursor only reads the cache and sends no
+LSP request. No FIX text is parsed by the accessor.
+
+A winbar can consume statusline output: >lua
+    vim.wo.winbar = '%!v:lua.require("venue-reader").current_summary({format="statusline"})'
+<
+The plugin does not set winbar/statusline. External UI components choose their
+own redraw policy. ColorScheme invalidates the derived statusline highlight
+cache; virtual text uses native highlight stacks directly.
+
+summary.semantic_highlighting defaults to true. Set false for uniform
+VenueReaderSummary styling and to stop requesting metadata; source semantic
+highlighting remains independent. Project/modeline metadata suppression retains
+plain summaries, with the source reported in status().annotations.styling.
+Malformed or missing metadata uses base styling without dropping label text.
+Configure summary templates in LSP settings or personal/project TOML; modelines
+cannot set messageSummary.template.
 
 ==============================================================================
 Semantic styles                                         *venue-reader-styling*
@@ -104,6 +145,9 @@ The adapter adds these FIX-filetype defaults:
     @lsp.type.quantity.fix                     Link to @number
     @lsp.type.money.fix                        Link to @number
     @lsp.type.timestamp.fix                    Link to @string
+    @lsp.type.flag.fix                         Link to DiagnosticWarn
+    @lsp.mod.peer1.fix                         Link to Identifier
+    @lsp.mod.peer2.fix                         Link to Special
     @lsp.typemod.group.group1a.fix              Background from DiffAdd
     @lsp.typemod.group.group1b.fix              Background from DiffChange
     @lsp.typemod.group.group2a.fix              Background from DiffDelete

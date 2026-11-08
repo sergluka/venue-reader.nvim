@@ -49,7 +49,7 @@ local function fixture(mode, lines)
   rawset(vim, "system", function(command, options, callback)
     if command[1]:find("summary-test", 1, true) then
       vim.schedule(function()
-        options.stdout(nil, "venue-reader " .. release.version .. "\n")
+        options.stdout(nil, "venue-reader " .. (release.series .. ".0") .. "\n")
         callback({ code = 0 })
       end)
       return { kill = function() end }
@@ -67,9 +67,13 @@ local function fixture(mode, lines)
           hoverProvider = true,
           inlayHintProvider = true,
           codeLensProvider = {},
+          semanticTokensProvider = {
+            legend = { tokenTypes = { "number", "flag" }, tokenModifiers = { "header", "peer1" } },
+            full = true,
+          },
           executeCommandProvider = { commands = { "fix.describeOverrides" } },
         },
-        serverInfo = { name = "venue-reader", version = release.version },
+        serverInfo = { name = "venue-reader", version = (release.series .. ".0") },
       })
     end)
     return rpc
@@ -93,6 +97,7 @@ local function configuration(context, overrides)
   equal(request.params.command, "fix.describeOverrides")
   local effective = {
     ["messageSummary.enabled"] = true,
+    ["messageSummary.semanticTokens"] = true,
     ["messageSummary.channels.inlayHints"] = true,
     ["messageSummary.channels.codeLens"] = false,
     ["limits.rangeLines"] = 2000,
@@ -107,17 +112,7 @@ local function configuration(context, overrides)
   vim.wait(30)
 end
 
-local function hints(context, label)
-  local opened = assert(context.transport:notification("textDocument/didOpen"))
-  local version = opened.textDocument.version
-  for _, notification in ipairs(context.transport.notifications) do
-    if
-      notification.method == "textDocument/didChange"
-      and notification.params.textDocument.uri == opened.textDocument.uri
-    then
-      version = notification.params.textDocument.version
-    end
-  end
+local function hints(label)
   return {
     {
       position = { line = 0, character = 0 },
@@ -126,8 +121,6 @@ local function hints(context, label)
       paddingRight = true,
       data = {
         kind = "summary",
-        uri = opened.textDocument.uri,
-        version = version,
       },
     },
     { position = { line = 0, character = 12 }, label = "MsgType", data = { kind = "tag" } },
@@ -138,7 +131,7 @@ local function reply(context, result)
   local request = wait_request(context.transport, "textDocument/inlayHint")
   equal(request.params.range.start.line, 0)
   equal(request.params.range["end"].line, vim.api.nvim_buf_line_count(context.buffer))
-  context.transport:reply(request.id, result or hints(context))
+  context.transport:reply(request.id, result or hints())
   vim.wait(30)
   return request
 end

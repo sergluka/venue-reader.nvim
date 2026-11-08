@@ -48,11 +48,12 @@ tests["missing framework fails without downloading"] = function()
   end)
 end
 
-tests["changing only the pin updates preparation URL and runtime compatibility"] = function()
+tests["central manifest controls artifact URLs and required runtime series"] = function()
   isolated(function(_, directory)
     local metadata_path = directory .. "/lua/venue-reader/release.json"
     local metadata = vim.json.decode(table.concat(vim.fn.readfile(metadata_path), "\n"))
     metadata.version = "7.13.29"
+    metadata.series = "7.13"
     vim.fn.writefile({ vim.json.encode(metadata) }, metadata_path)
     local dependencies = dofile(directory .. "/scripts/dependencies.lua")
     MiniTest.expect.equality(dependencies.version, "7.13.29")

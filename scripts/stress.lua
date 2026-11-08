@@ -195,7 +195,153 @@ local function child(size, binary, output)
   print("PASS: synthetic log " .. size .. " lines")
 end
 
+local function summary_cost()
+  vim.opt.runtimepath:prepend(root)
+  local styles = require("venue-reader.summary_styles")
+  vim.api.nvim_set_hl(0, "VenueReaderSummary", { link = "Comment" })
+  require("venue-reader.highlights").setup()
+  local parts = {
+    "20260101-09:00:00.000",
+    ": ",
+    "42",
+    ": ",
+    "CLIENT",
+    "=>",
+    "BROKER",
+    " | ",
+    "ExecutionReport",
+    " | ",
+    "Trade",
+    " ",
+    "10",
+    "@",
+    "65000",
+    " ClOrdId=",
+    "ORDER1",
+    " ExecId=",
+    "FILL1",
+  }
+  local codes = {
+    "T",
+    false,
+    "N",
+    false,
+    "S",
+    false,
+    "S",
+    false,
+    "K",
+    false,
+    "E",
+    false,
+    "Q",
+    false,
+    "P",
+    false,
+    "S",
+    false,
+    "S",
+  }
+  local namespace = vim.api.nvim_create_namespace("venue-reader.summary.cost")
+  local buffer = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(buffer, 0, -1, false, vim.fn["repeat"]({ "8=FIX.4.4|35=8|" }, 150))
+  local report = {}
+  for _, variant in ipairs({ "plain", "structured", "colored" }) do
+    local response = {}
+    for row = 0, 149 do
+      local label, tokens = {}, {}
+      for index, value in ipairs(parts) do
+        label[index] = { value = value }
+        tokens[index] = codes[index] and { codes[index], 0 } or vim.NIL
+      end
+      if variant == "plain" then
+        label = {
+          { value = table.concat(parts, "", 1, 9) },
+          { value = " | " },
+          { value = table.concat(parts, "", 11) },
+        }
+      end
+      response[#response + 1] = {
+        position = { line = row, character = 0 },
+        label = label,
+        data = { kind = "summary", tokens = variant == "colored" and tokens or nil },
+      }
+    end
+    local encoded = vim.json.encode(response)
+    local decoded = vim.json.decode(encoded)
+    local client =
+      { server_capabilities = { semanticTokensProvider = { legend = { tokenModifiers = {} } } } }
+    local retained, prepared
+
+    local function decode()
+      retained = vim.json.decode(encoded)
+    end
+
+    local function chunks()
+      retained = {}
+      for _, hint in ipairs(decoded) do
+        retained[#retained + 1] = styles.chunks(hint, client, variant == "colored")
+      end
+    end
+
+    -- Chunks are built once in advance so this times the extmark updates alone.
+    local function draw()
+      vim.api.nvim_buf_clear_namespace(buffer, namespace, 0, -1)
+      for index, hint in ipairs(decoded) do
+        vim.api.nvim_buf_set_extmark(buffer, namespace, hint.position.line, 0, {
+          virt_text = prepared[index],
+          virt_text_pos = "inline",
+        })
+      end
+    end
+
+    local function time(operation)
+      for _ = 1, 10 do
+        operation()
+      end
+      collectgarbage("collect")
+      local started = vim.uv.hrtime()
+      for _ = 1, 200 do
+        operation()
+      end
+      return (vim.uv.hrtime() - started) / 200 / 1e6
+    end
+    styles.clear()
+    local result = {
+      bytes = #encoded,
+      summaries = #response,
+      decode_ms = time(decode),
+      chunks_ms = time(chunks),
+    }
+    chunks()
+    prepared = retained
+    result.extmarks_ms = time(draw)
+    prepared, retained = nil, nil
+    collectgarbage("collect")
+    local baseline = collectgarbage("count")
+    chunks()
+    collectgarbage("collect")
+    result.chunks_kib = collectgarbage("count") - baseline
+    retained = nil
+    collectgarbage("collect")
+    baseline = collectgarbage("count")
+    for _ = 1, 1000 do
+      chunks()
+    end
+    retained = nil
+    collectgarbage("collect")
+    result.repeated_retained_kib = collectgarbage("count") - baseline
+    report[variant] = result
+  end
+  vim.api.nvim_buf_delete(buffer, { force = true })
+  print(vim.json.encode(report))
+end
+
 local function run()
+  if arg[1] == "--summary-cost" then
+    summary_cost()
+    return
+  end
   if arg[1] == "--child" then
     child(assert(tonumber(arg[2])), assert(arg[3]), assert(arg[4]))
     return
@@ -205,7 +351,10 @@ local function run()
     ":p"
   )
   vim.fn.mkdir(output, "p")
-  local binary = dofile(root .. "/scripts/dependencies.lua").verify()
+  local binary = vim.env.VENUE_READER_TEST_SERVER
+  if not binary or binary == "" then
+    binary = dofile(root .. "/scripts/dependencies.lua").verify()
+  end
   for _, size in ipairs({ 10000, 100000 }) do
     local environment = vim.fn.environ()
     for _, name in ipairs({

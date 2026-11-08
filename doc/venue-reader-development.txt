@@ -46,6 +46,61 @@ suites need no server binary. Installation tests need the prepared Linux release
 archive for offline fixtures.
 
 ==============================================================================
+Interactive worktrees                               *venue-reader-dev-launcher*
+
+From the plugin checkout you want to load:
+>sh
+    make dev
+<
+Git selects the server worktree with the same branch name as this plugin
+checkout. The primary server repository, venue-reader, must be next to the
+primary plugin checkout; worktrees themselves can live elsewhere. Detection
+uses Git metadata, not worktree directory names. Detached HEAD, no matching
+server branch, or multiple matches require an explicit override:
+>sh
+    make dev SERVER_DIR=/absolute/path/to/server-worktree
+<
+This builds the selected server in Cargo's dev profile, then loads the plugin
+from this checkout through your normal Neovim configuration. The
+launcher reads the executable path from Cargo's compiler-artifact JSON, so a
+custom CARGO_TARGET_DIR is respected. Build failures stop startup; there is no
+fallback to an installed release. Cargo may fetch missing Rust dependencies.
+
+The launcher requires Neovim 0.12+, Git, Cargo and the server's Rust toolchain. It
+needs no mini.test dependencies. It sources your normal init.lua/init.vim and
+preserves plugins, options and Tree-sitter settings. Use :edit to open a FIX
+log, or pass files normally with the direct command:
+>sh
+    nvim -u /absolute/path/to/plugin-worktree/scripts/dev.lua log.fix
+<
+Use matching branch names for future paired feature worktrees, or SERVER_DIR
+for a different pairing. The direct command accepts the same override through
+VENUE_READER_DEV_SERVER_DIR. Release pins need no changes.
+The server must be compatible with the plugin checkout. Ordinary server project/modeline settings
+still apply to opened files. Restart the development Neovim to rebuild/reload
+after source changes. make dev NVIM=/path/to/nvim selects another executable.
+
+Development overrides in your config ~
+
+The launcher sets VENUE_READER_DEV_PLUGIN_DIR and VENUE_READER_DEV_SERVER before
+loading your init. Configure your plugin-manager spec to read these optional
+overrides. Keep your usual checkout and binary as fallbacks. For lazy.nvim:
+>lua
+    {
+      "sergluka/venue-reader.nvim",
+      dir = vim.env.VENUE_READER_DEV_PLUGIN_DIR or "/path/to/normal/plugin",
+      opts = {
+        server = {
+          cmd = { vim.env.VENUE_READER_DEV_SERVER or "/path/to/normal/server", "--stdio" },
+        },
+      },
+    }
+<
+Use this in your existing spec; keep other options unchanged. Normal Neovim
+startup has no overrides and uses the regular checkout/binary. No Lazy internals
+are patched and the launcher does not call setup a second time.
+
+==============================================================================
 Checks                                                   *venue-reader-tests*
 
 After preparation, checks and tests run without network access: >sh
@@ -118,5 +173,19 @@ examples and limits aligned across README, wiki and native help. Help uses tags,
 text tables and plain examples; colored illustrations belong in the wiki.
 The local sibling wiki remains unpublished until the project is public, as
 described in |venue-reader|.
+
+==============================================================================
+Summary performance                           *venue-reader-summary-performance*
+
+Measure 150 synthetic summaries as plain parts, structured parts, and colored
+parts in the existing stress tool: >sh
+    nvim --headless -u NONE -i NONE -l scripts/stress.lua --summary-cost
+<
+The JSON report measures decoding, chunk construction, and native extmark
+updates separately; the extmark timing uses chunks built in advance. It
+reports serialized bytes, retained chunk memory, and memory after 1,000
+replacement batches. Lua heap measurements exclude native extmark memory;
+record them separately from server timing and process RSS. This probe does not
+measure actual screen paint or establish release-installation evidence.
 
  vim:tw=78:ts=8:noet:ft=help:norl:
