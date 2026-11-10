@@ -2,7 +2,13 @@ local MiniTest = require("mini.test")
 local Lsp = require("tests.support.lsp")
 local Plugin = require("venue-reader")
 
-local tests = MiniTest.new_set()
+local tests = MiniTest.new_set({
+  hooks = {
+    pre_case = function()
+      vim.lsp.config.venue_reader = {} -- luacheck: ignore 122
+    end,
+  },
+})
 local equal = MiniTest.expect.equality
 
 local function child()
@@ -135,10 +141,10 @@ tests["released server supplies native price quantity and repeating-group tokens
   local settings = {
     fix = { inlayHints = { tagNames = { enabled = true }, groupPaths = { enabled = true } } },
   }
+  vim.lsp.config("venue_reader", { settings = settings })
   Plugin.setup({
     server = { cmd = { binary, "--stdio" } },
     summary = { mode = "off" },
-    settings = settings,
   })
   MiniTest.finally(function()
     vim.lsp.enable("venue_reader", false)
@@ -201,22 +207,16 @@ tests["released server supplies native price quantity and repeating-group tokens
   assert(labels():find("NoMDEntries/1/MDEntryType", 1, true), labels())
   assert(labels():find("NoMDEntries/2/MDEntryType", 1, true), labels())
   settings.fix.inlayHints.groupPaths.enabled = false
-  Plugin.setup({
-    server = { cmd = { binary, "--stdio" } },
-    summary = { mode = "off" },
-    settings = settings,
-  })
+  active.settings.fix.inlayHints = vim.deepcopy(settings.fix.inlayHints)
+  active:notify("workspace/didChangeConfiguration", { settings = active.settings })
   Lsp.wait(function()
     local current = labels()
     return current:find("MDEntryType", 1, true) and not current:find("NoMDEntries/1", 1, true)
   end, "group-path switch preserves plain tag names")
   settings.fix.inlayHints.groupPaths.enabled = true
   settings.fix.inlayHints.tagNames.enabled = false
-  Plugin.setup({
-    server = { cmd = { binary, "--stdio" } },
-    summary = { mode = "off" },
-    settings = settings,
-  })
+  active.settings.fix.inlayHints = vim.deepcopy(settings.fix.inlayHints)
+  active:notify("workspace/didChangeConfiguration", { settings = active.settings })
   Lsp.wait(function()
     local current = labels()
     return current:find("Bid", 1, true) and not current:find("MDEntry", 1, true)

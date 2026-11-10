@@ -13,13 +13,14 @@ and navigation. It is not required for LSP features.
 ## Installation
 
 Choose one method. The repository is currently private; GitHub access is required.
-This development branch requires a compatible local server through `server.cmd`.
+This development branch requires a compatible local server through `server.cmd`
+or native `cmd`.
 The pinned release does not yet support structured summaries; automatic
 installation reports this until a compatible release is pinned.
 
 ### LazyVim
 
-Create `lua/plugins/venue-reader.lua`. LazyVim calls setup through `opts`:
+Create `lua/plugins/venue-reader.lua`. Register native server settings before setup:
 
 ```lua
 -- lua/plugins/venue-reader.lua
@@ -30,7 +31,11 @@ return {
       { "nvim-treesitter/nvim-treesitter", branch = "main" },
       { "nvim-treesitter/nvim-treesitter-textobjects", branch = "main" },
     },
-    opts = {},
+    opts = {}, -- adapter options
+    config = function(_, opts)
+      vim.lsp.config("venue_reader", { settings = { fix = {} } })
+      require("venue-reader").setup(opts)
+    end,
   },
 }
 ```
@@ -55,8 +60,8 @@ require("venue-reader").setup()
 
 Update with `:lua vim.pack.update({ "venue-reader.nvim" })`.
 
-Server discovery starts with a named FIX buffer. It reuses a compatible explicit
-command, PATH binary or managed installation, in that order. Otherwise it installs
+Without native `cmd`, server discovery starts with a named FIX buffer. It reuses
+a compatible `server.cmd`, PATH binary or managed installation, in that order. Otherwise it installs
 the [pinned server](lua/venue-reader/release.json) asynchronously, checking SHA-256.
 An invalid explicit command reports an error. Compatible installations are reused
 without automatic upgrades or PATH changes.
@@ -69,12 +74,11 @@ and `:help venue-reader-setup`.
 
 ## Configuration
 
-Defaults work with `setup()`. For example, choose summaries above messages and
-pass server settings through `settings.fix`:
+Defaults work with `setup()`. Server settings belong to native LSP configuration;
+summary placement belongs to the adapter:
 
 ```lua
-require("venue-reader").setup({
-  summary = { mode = "above" },
+vim.lsp.config("venue_reader", {
   settings = { fix = {
     inlayHints = {
       tagNames = { enabled = true },
@@ -82,6 +86,7 @@ require("venue-reader").setup({
     },
   } },
 })
+require("venue-reader").setup({ summary = { mode = "above" } })
 ```
 
 For an existing binary or offline use:
@@ -96,9 +101,15 @@ require("venue-reader").setup({
 })
 ```
 
-`server.cmd` is an argv list; its executable must support `--version`. Project
-and modeline settings keep precedence. Settings update on repeated setup;
-executable changes require `:VenueReader restart`. See
+`server.cmd` is an argv list; its executable must support `--version`. Native
+`cmd` takes precedence and bypasses acquisition. Configure native `cmd`, `root_dir`
+and callbacks before setup; the adapter preserves them and composes required
+hooks. Project/modeline settings keep precedence.
+
+Changes to `vim.lsp.config` settings apply to new clients; use
+`:VenueReader restart` or explicitly update an attached client's settings and
+send `workspace/didChangeConfiguration`. Repeated setup changes adapter options,
+including only the three summary keys it manages. See
 [plugin configuration](https://github.com/sergluka/venue-reader.nvim/wiki/Configuration),
 `:help venue-reader-setup` and the server's
 [settings reference](https://github.com/sergluka/venue-reader/wiki/Configuration-Reference).
@@ -107,7 +118,8 @@ executable changes require `:VenueReader restart`. See
 
 Open a `*.fix` file, or use `:set ft=fix`. LSP attachment requires a normal buffer
 with a name; `:file /path/log.fix` assigns one without saving. Buffers share a
-client under the nearest `.venue-reader.toml` root, otherwise their directory.
+client under the nearest `.venue-reader.toml` root, otherwise their directory,
+unless native `root_dir` supplies another rule.
 
 Use native LSP interfaces, for example `:lua vim.lsp.buf.hover()` and
 `:lua vim.lsp.buf.document_symbol()`. The plugin sets no user keybindings.
@@ -116,7 +128,7 @@ Use native LSP interfaces, for example `:lua vim.lsp.buf.hover()` and
 | --- | --- |
 | `:VenueReader status` | Inspect server, annotations and optional grammar state |
 | `:checkhealth venue-reader` | Check requirements and current state |
-| `:VenueReader restart` | Resolve the executable and restart through native LSP |
+| `:VenueReader restart` | Restart the configured transport through native LSP |
 | `:VenueReader install server` | Retry server discovery/installation |
 | `:VenueReader install grammar` | Retry optional FIX parser acquisition |
 | `:VenueReader dictionary` | Choose a server dictionary with `vim.ui.select` |

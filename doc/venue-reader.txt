@@ -45,8 +45,9 @@ need not exist on disk. To name one without saving: >vim
     file /path/log.fix
 <
 :saveas also works. Renaming closes the old server document before opening the
-new one. The project root is the nearest parent containing .venue-reader.toml,
-otherwise the file's directory. Buffers in the same managed session share a
+new one. By default the project root is the nearest parent containing
+.venue-reader.toml, otherwise the file's directory. Native root_dir can supply
+a different rule; see |venue-reader-native-config|. Buffers in the same managed session share a
 client. Optional syntax can work in unnamed FIX buffers too.
 
 Use Neovim's native LSP interfaces to inspect fields and messages. For example:

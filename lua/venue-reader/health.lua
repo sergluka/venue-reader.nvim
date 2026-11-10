@@ -9,6 +9,8 @@ function M.check()
   local status = require("venue-reader").status()
   if status.acquisition.error then
     vim.health.error(status.acquisition.error)
+  elseif status.acquisition.state == "external" then
+    vim.health.info("Server transport is configured through native LSP cmd")
   elseif status.acquisition.state == "ready" then
     vim.health.ok("Compatible server " .. status.acquisition.version)
   else

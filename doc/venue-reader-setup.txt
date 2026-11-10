@@ -20,11 +20,15 @@ Create lua/plugins/venue-reader.lua in your Neovim configuration directory:
           { "nvim-treesitter/nvim-treesitter", branch = "main" },
           { "nvim-treesitter/nvim-treesitter-textobjects", branch = "main" },
         },
-        opts = {},
+        opts = {}, -- adapter options
+        config = function(_, opts)
+          vim.lsp.config("venue_reader", { settings = { fix = {} } })
+          require("venue-reader").setup(opts)
+        end,
       },
     }
 <
-LazyVim loads the spec and calls setup through opts. The optional dependencies
+The config function registers native settings before setup. The dependencies
 use Tree-sitter main APIs; ensure your LazyVim configuration uses those APIs.
 The inner spec also works in a standalone lazy.nvim configuration. The manager
 is only needed for parser installation; textobjects is only needed for syntax
@@ -59,7 +63,6 @@ Defaults: >lua
       summary = { mode = "front", semantic_highlighting = true },
       commands = { timeout_ms = 5000 },
       treesitter = { enabled = true, auto_install = true },
-      settings = { fix = {} },
     })
 <
 server.auto_install ~
@@ -91,15 +94,35 @@ independent. Native CodeLens uses LspCodeLens.
 See |venue-reader-modes| and |venue-reader-styling|.
 
 commands.timeout_ms ~
-Finite positive integer; default 5000. The deadline starts after client
-acquisition and covers command bootstrap plus requests. Binary discovery/
-installation and time spent choosing a dictionary are excluded. Timeouts cancel
-native outstanding requests; late results do not write registers or previews.
+Finite positive integer; default 5000. The deadline starts when the operation
+is created and covers root resolution, discovery/installation, bootstrap and
+requests. Time spent choosing a dictionary is excluded. Timeouts cancel native
+outstanding requests; late root resolution cannot start a client solely for an
+expired command, and late answers do not write registers or previews.
 
-settings.fix ~
-Pass server settings through. Project/modeline settings keep higher priority.
-Empty settings.fix is sent as a JSON object. Repeated setup is safe and updates
-settings live. Changing the executable requires :VenueReader restart.
+Native server settings ~
+Register server settings with vim.lsp.config, separately from adapter options:
+>lua
+    vim.lsp.config("venue_reader", {
+      settings = { fix = { hover = { enabled = true } } },
+    })
+    require("venue-reader").setup()
+<
+Project/modeline settings keep higher priority. Empty settings.fix is sent as a
+JSON object. Native settings may be registered before or after setup, but must
+precede client creation. Later registration affects future clients; use
+:VenueReader restart to apply it. Repeated setup updates adapter options without
+restoring the client's full settings table.
+
+For a live change, mutate the existing settings table and notify the server:
+>lua
+    for _, client in ipairs(vim.lsp.get_clients({ name = "venue_reader" })) do
+      client.settings.fix.hover = { enabled = false }
+      client:notify("workspace/didChangeConfiguration", { settings = client.settings })
+    end
+<
+This changes running clients only. Register the same setting with vim.lsp.config
+if it should survive restart. Preserve the three managed summary keys below.
 
 For example, native field labels can be enabled with the settings shown in
 |venue-reader-field-hints|. Generic server configuration belongs to the server
@@ -107,16 +130,55 @@ reference rather than a second plugin-specific schema:
 https://github.com/sergluka/venue-reader/wiki/Configuration
 https://github.com/sergluka/venue-reader/wiki/Configuration-Reference
 
-Mode selection sets fix.messageSummary.channels.inlayHints and codeLens. It
-also sets fix.messageSummary.semanticTokens from the mode and
-summary.semantic_highlighting. Contradictory explicit setup values are
-rejected. Project/modeline conflicts are reported in status/health with their
-sources; they are not overridden. See |venue-reader-summary-gates|.
+Mode selection changes only fix.messageSummary.channels.inlayHints, codeLens
+and fix.messageSummary.semanticTokens in client settings. Registered native
+settings stay unchanged. The mode writes these keys at each client start and each
+mode change, replacing values from vim.lsp.config or live client edits.
+Project/modeline conflicts are reported in status/health with
+their sources; they are not overridden. See |venue-reader-summary-gates|.
 
 treesitter.enabled / treesitter.auto_install ~
 Optional syntax defaults to enabled with automatic installation allowed.
 enabled can be a boolean or an enabled(bufnr) predicate. A buffer opt-out and
 large-file policy are described in |venue-reader-treesitter-options|.
+
+==============================================================================
+Native overrides                                  *venue-reader-native-config*
+
+Register native cmd, root_dir, callbacks and handlers before setup:
+>lua
+    vim.lsp.config("venue_reader", {
+      cmd = { "/absolute/path/to/venue-reader", "--stdio" },
+      root_dir = function(buffer, on_dir)
+        local directory = vim.fs.root(buffer, ".git")
+        if directory then
+          on_dir(directory)
+        end
+      end,
+    })
+    require("venue-reader").setup()
+<
+Native cmd may be an argv list or transport function. It takes precedence over
+server options and bypasses discovery/installation. Its server must report a
+compatible version at initialize; missing, malformed or incompatible versions
+stop that client. Native commands are not probed with --version.
+
+The adapter preserves capabilities, unrelated handlers and on_attach. It runs
+user before_init before preparing settings, and user on_init before reconciling
+managed summary keys. Exit cleanup and user on_exit each run once. Repeated setup
+does not stack callback wrappers. workspace/configuration and
+textDocument/inlayHint are required adapter handlers and cannot be replaced.
+Structural replacement after setup is unsupported.
+
+Without a native root override, the default is the nearest .venue-reader.toml
+directory, otherwise the file's directory (cwd for a command-only session).
+This root function takes precedence over root_markers; supply root_dir for a
+different rule. A custom resolver that never calls on_dir prevents attachment;
+command-only operations report a timeout after commands.timeout_ms.
+
+Status/health identifies native transports as externally configured, reports
+their argv or a function-transport label, and shows the initialized server
+version. It does not invent an executable path for a function transport.
 
 ==============================================================================
 Server discovery                                      *venue-reader-server*

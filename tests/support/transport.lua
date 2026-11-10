@@ -67,7 +67,10 @@ function Transport:initialize()
   assert(request.method == "initialize")
   self:reply(request.id, {
     capabilities = { textDocumentSync = { openClose = true, change = 1 }, hoverProvider = true },
-    serverInfo = { name = "controlled-test-server", version = "1" },
+    serverInfo = {
+      name = "controlled-test-server",
+      version = require("venue-reader.release").series .. ".0",
+    },
   })
 end
 

@@ -140,21 +140,6 @@ local function attach(operation, err, client, callback, guard)
   operation.client = client
   operation.root = client.config.root_dir
   operation.settings = vim.deepcopy(client.settings)
-  operation.timer = assert(vim.uv.new_timer())
-  operation.timer:start(
-    timeout_ms,
-    0,
-    vim.schedule_wrap(function()
-      if operation.done then
-        return
-      end
-      local current = operation:valid()
-      operation:cancel()
-      if current then
-        notify("command timed out")
-      end
-    end)
-  )
   if not operation:valid() then
     operation:cancel()
     return
@@ -178,11 +163,28 @@ local function operation(buffer, document, callback, client, guard)
     result.changedtick = vim.api.nvim_buf_get_changedtick(buffer)
   end
   active[result] = true
+  result.timer = assert(vim.uv.new_timer())
+  result.timer:start(
+    timeout_ms,
+    0,
+    vim.schedule_wrap(function()
+      if result.done then
+        return
+      end
+      local current = result:valid()
+      result:cancel()
+      if current then
+        notify("command timed out")
+      end
+    end)
+  )
   if client then
     attach(result, nil, client, callback, guard)
   else
     acquire(buffer, document, function(err, selected, selected_guard)
       attach(result, err, selected, callback, selected_guard)
+    end, function()
+      return not result.done and result.epoch == epoch
     end)
   end
   return result
@@ -194,7 +196,11 @@ end
 
 function M.before_init(params, config)
   config.venue_reader_initial_settings = vim.deepcopy(config.settings)
-  params.initializationOptions = vim.deepcopy(config.settings)
+  params.initializationOptions = vim.tbl_extend(
+    "force",
+    vim.deepcopy(params.initializationOptions or {}),
+    { fix = vim.deepcopy(config.settings.fix or vim.empty_dict()) }
+  )
 end
 
 function M.configuration(err, params, context, config)

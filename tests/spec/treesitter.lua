@@ -427,7 +427,10 @@ end
 tests["public Plug textobject works as a native operator motion"] = function()
   local process = child({ parser = true, textobjects = true })
   process.lua_func(function()
-    require("venue-reader").setup({ server = { auto_install = false }, summary = { mode = "off" } })
+    require("venue-reader").setup({
+      server = { auto_install = false },
+      summary = { mode = "off" },
+    })
     vim.keymap.set("o", "if", "<Plug>(VenueReaderField)")
   end)
   buffer(process, { "8=FIX.4.4|35=D|" })
@@ -522,19 +525,18 @@ end
 tests["real LSP hover and decoded yank work while grammar is pending and failed"] = function()
   local process = child({ manager = true })
   process.lua_func(function(binary)
-    require("venue-reader").setup({
-      server = { cmd = { binary, "--stdio" } },
-      summary = { mode = "off" },
-    })
     local reports = {}
-    local config = vim.lsp.config.venue_reader
     local handler = function(err, result, context, value)
       if not err and result then
         reports[result.uri] = true
       end
       return vim.lsp.handlers["textDocument/publishDiagnostics"](err, result, context, value)
     end
-    config.handlers["textDocument/publishDiagnostics"] = handler -- luacheck: ignore 122
+    vim.lsp.config("venue_reader", { handlers = { ["textDocument/publishDiagnostics"] = handler } })
+    require("venue-reader").setup({
+      server = { cmd = { binary, "--stdio" } },
+      summary = { mode = "off" },
+    })
     local fixture = require("tests.support.treesitter")
     local target = fixture.buffer(nil, vim.fn.tempname() .. ".fix")
     fixture.wait(function()

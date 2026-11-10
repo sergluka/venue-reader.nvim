@@ -56,8 +56,9 @@ next managed attachment (including rename/restart) or explicit mode activation:
 CodeLens mode opts into native CodeLens. Native disable is reported without
 automatic mode fallback. Mode changes set fix.messageSummary.channels.inlayHints
 and codeLens. They also set fix.messageSummary.semanticTokens from the mode
-and summary.semantic_highlighting. Contradictory explicit setup values are
-rejected; project/modeline settings keep their higher priority. Status/health
+and summary.semantic_highlighting. These mode values replace channel values from
+vim.lsp.config or live client edits at each client start and each mode change.
+Project/modeline settings keep their higher priority. Status/health
 report effective conflicts and sources. Correct the blocking override, then
 select the mode again.
 A coalesced document configuration lookup uses fix.describeOverrides; it does
@@ -82,7 +83,7 @@ Native field hints                                  *venue-reader-field-hints*
 
 Neovim renders tag names, enum labels and group paths as native inlay hints.
 Configure server output with: >lua
-    require("venue-reader").setup({
+    vim.lsp.config("venue_reader", {
       settings = { fix = {
         inlayHints = {
           tagNames = { enabled = true },

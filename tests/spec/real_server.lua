@@ -2,7 +2,13 @@ local MiniTest = require("mini.test")
 local Lsp = require("tests.support.lsp")
 local release = require("venue-reader.release")
 local equal = MiniTest.expect.equality
-local tests = MiniTest.new_set()
+local tests = MiniTest.new_set({
+  hooks = {
+    pre_case = function()
+      vim.lsp.config.venue_reader = {} -- luacheck: ignore 122
+    end,
+  },
+})
 
 tests["released server opens and decodes an unsaved named buffer"] = function()
   local binary =
@@ -81,10 +87,7 @@ end
 tests["local server supplies colored cached hidden summaries in one native response"] = function()
   local plugin = require("venue-reader")
   local binary = assert(vim.env.VENUE_READER_TEST_SERVER)
-  plugin.setup({
-    server = { cmd = { binary, "--stdio" } },
-    treesitter = { enabled = false },
-    summary = { mode = "hidden" },
+  vim.lsp.config("venue_reader", {
     settings = {
       fix = {
         messageSummary = {
@@ -93,6 +96,11 @@ tests["local server supplies colored cached hidden summaries in one native respo
         },
       },
     },
+  })
+  plugin.setup({
+    server = { cmd = { binary, "--stdio" } },
+    treesitter = { enabled = false },
+    summary = { mode = "hidden" },
   })
   MiniTest.finally(function()
     vim.lsp.enable("venue_reader", false)

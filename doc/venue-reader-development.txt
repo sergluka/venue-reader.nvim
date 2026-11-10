@@ -94,6 +94,10 @@ overrides. Keep your usual checkout and binary as fallbacks. For lazy.nvim:
           cmd = { vim.env.VENUE_READER_DEV_SERVER or "/path/to/normal/server", "--stdio" },
         },
       },
+      config = function(_, opts)
+        vim.lsp.config("venue_reader", { settings = { fix = {} } })
+        require("venue-reader").setup(opts)
+      end,
     }
 <
 Use this in your existing spec; keep other options unchanged. Normal Neovim

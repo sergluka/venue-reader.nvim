@@ -3,7 +3,13 @@ local Lsp = require("tests.support.lsp")
 local Plugin = require("venue-reader")
 
 local equal = MiniTest.expect.equality
-local tests = MiniTest.new_set()
+local tests = MiniTest.new_set({
+  hooks = {
+    pre_case = function()
+      vim.lsp.config.venue_reader = {} -- luacheck: ignore 122
+    end,
+  },
+})
 local binary = assert(vim.env.VENUE_READER_TEST_SERVER)
 
 local function setup(settings)
@@ -27,20 +33,21 @@ local function setup(settings)
   rawset(vim, "notify", function(message)
     messages[#messages + 1] = tostring(message)
   end)
+  vim.lsp.config("venue_reader", {
+    settings = { fix = settings or {} },
+    handlers = {
+      ["textDocument/publishDiagnostics"] = function(err, result, context)
+        if not err and result then
+          ready[context.client_id .. ":" .. result.uri] = true
+        end
+        return vim.lsp.handlers["textDocument/publishDiagnostics"](err, result, context)
+      end,
+    },
+  })
   Plugin.setup({
     server = { cmd = { binary, "--stdio" } },
     summary = { mode = "off" },
-    settings = { fix = settings or {} },
   })
-  local config = vim.lsp.config.venue_reader
-  -- luacheck: push ignore 122
-  config.handlers["textDocument/publishDiagnostics"] = function(err, result, context)
-    if not err and result then
-      ready[context.client_id .. ":" .. result.uri] = true
-    end
-    return vim.lsp.handlers["textDocument/publishDiagnostics"](err, result, context)
-  end
-  -- luacheck: pop
   MiniTest.finally(function()
     vim.lsp.enable("venue_reader", false)
     for _, client in ipairs(vim.lsp.get_clients({ name = "venue_reader" })) do
@@ -255,15 +262,15 @@ tests["modeline precedence survives session dictionary selection"] = function()
   equal(result.sources.dictionary.layer, "modeline")
 end
 
-tests["native restart uses latest setup initialization settings"] = function()
+tests["native restart uses latest registered initialization settings"] = function()
   local fixture = setup({ documentLink = { url = "https://example.test/first/{tag}" } })
   local buffer = Lsp.buffer()
   local initial = fixture.attached(buffer)
-  Plugin.setup({
-    server = { cmd = { binary, "--stdio" } },
-    summary = { mode = "off" },
+  vim.lsp.config("venue_reader", {
     settings = { fix = { documentLink = { url = "https://example.test/second/{tag}" } } },
   })
+  equal(initial.settings.fix.documentLink.url, "https://example.test/first/{tag}")
+  Plugin.summary("codelens")
   vim.cmd("lsp restart venue_reader")
   local replacement
   Lsp.wait(function()
@@ -273,6 +280,7 @@ tests["native restart uses latest setup initialization settings"] = function()
   Plugin.tag(35)
   assert(preview_text(fixture, "markdown"):find("https://example.test/second/35", 1, true))
   equal(replacement.config.venue_reader_initial_settings, replacement.settings)
+  equal(replacement.settings.fix.messageSummary.channels, { inlayHints = false, codeLens = true })
 end
 
 tests["cold explicit global dictionary uses committed initialization settings"] = function()

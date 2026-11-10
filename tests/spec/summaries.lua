@@ -5,7 +5,13 @@ local Plugin = require("venue-reader")
 local Ui = require("tests.support.summary_ui")
 
 local equal = MiniTest.expect.equality
-local tests = MiniTest.new_set()
+local tests = MiniTest.new_set({
+  hooks = {
+    pre_case = function()
+      vim.lsp.config.venue_reader = {} -- luacheck: ignore 122
+    end,
+  },
+})
 local marks, pending, wait_request = Ui.marks, Ui.pending, Ui.wait_request
 local fixture, configuration, hints, reply, refresh =
   Ui.fixture, Ui.configuration, Ui.hints, Ui.reply, Ui.refresh
@@ -246,17 +252,6 @@ tests["late effective lookup from previous mode cannot unblock the new mode"] = 
   vim.wait(30)
   equal(#marks(context.buffer), 0)
   equal(Plugin.status(context.buffer).annotations.mode, "above")
-end
-
-tests["explicit contradictory channels are rejected before setup"] = function()
-  MiniTest.expect.error(function()
-    Plugin.setup({
-      summary = { mode = "front" },
-      settings = {
-        fix = { messageSummary = { channels = { codeLens = true } } },
-      },
-    })
-  end, "contradicts")
 end
 
 tests["codelens uses native gate and explicit disable has no fallback"] = function()

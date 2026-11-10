@@ -10,7 +10,7 @@ vim.g.fix_plugin_owner = "venue-reader.nvim" -- luacheck: ignore 122
 
 local M = {}
 
-local Capabilities = require("venue-reader.capabilities")
+local Native = require("venue-reader.native")
 local Commands = require("venue-reader.commands")
 local Highlights = require("venue-reader.highlights")
 local Server = require("venue-reader.server")
@@ -19,21 +19,19 @@ local Treesitter = require("venue-reader.treesitter")
 local Yank = require("venue-reader.yank")
 
 local options
-local ready
 local generation = 0
 local lifetimes = {}
-local owner_marker = tostring(M)
+local command_clients = {}
 
 local defaults = {
   server = { auto_install = true },
   commands = { timeout_ms = 5000 },
   treesitter = { enabled = true, auto_install = true },
-  settings = { fix = vim.empty_dict() },
   summary = { mode = "front", semantic_highlighting = true },
 }
 
 local function managed(client)
-  return client.config.venue_reader_owner == owner_marker
+  return Native.managed(client)
 end
 
 local function notify(message, level)
@@ -67,24 +65,30 @@ local function selected_client(buffer)
       return client
     end
   end
-  local directory = context_root(buffer)
-  for _, client in ipairs(vim.lsp.get_clients({ name = "venue_reader" })) do
-    if managed(client) and not client:is_stopped() and client.config.root_dir == directory then
-      return client
-    end
+  local known = command_clients[buffer]
+  local client = known and vim.lsp.get_client_by_id(known.id)
+  if
+    client
+    and managed(client)
+    and not client:is_stopped()
+    and known.name == vim.api.nvim_buf_get_name(buffer)
+    and known.directory == vim.fn.getcwd()
+  then
+    return client
   end
 end
 
-local function acquire(buffer, document_required, callback)
+local function acquire(buffer, document_required, callback, valid)
   if not vim.api.nvim_buf_is_valid(buffer) then
     callback("The command buffer is no longer available")
     return
   end
-  local directory, captured = context_root(buffer), generation
+  local captured, name, directory = generation, vim.api.nvim_buf_get_name(buffer), vim.fn.getcwd()
   local function current()
     return generation == captured
       and vim.api.nvim_buf_is_valid(buffer)
-      and context_root(buffer) == directory
+      and vim.api.nvim_buf_get_name(buffer) == name
+      and vim.fn.getcwd() == directory
   end
   local client = selected_client(buffer)
   if document_required then
@@ -99,19 +103,20 @@ local function acquire(buffer, document_required, callback)
     callback(nil, client, current)
     return
   end
-  Server.resolve(options.server, function(err, argv, version)
-    if not current() then
-      callback("Command context changed during server discovery")
+  local config = vim.deepcopy(vim.lsp.config.venue_reader)
+  config.venue_reader_command_only = true
+  Native.resolve(buffer, true, function()
+    return current() and valid()
+  end, function(err, resolved_root)
+    if not current() or not valid() then
       return
     end
     if err then
       callback(err)
       return
     end
-    ready = { argv = argv, version = version }
-    local config = vim.deepcopy(vim.lsp.config.venue_reader)
-    config.root_dir = directory
-    local client_id = vim.lsp.start(config, {
+    config.root_dir = resolved_root
+    local success, client_id = pcall(vim.lsp.start, config, {
       bufnr = buffer,
       attach = false,
       reuse_client = function(existing, candidate)
@@ -121,10 +126,11 @@ local function acquire(buffer, document_required, callback)
           and existing.config.root_dir == candidate.root_dir
       end,
     })
-    if not client_id then
-      callback("Native LSP startup failed")
+    if not success or not client_id then
+      callback(success and "Native LSP startup failed" or client_id)
       return
     end
+    command_clients[buffer] = { id = client_id, name = name, directory = directory }
     callback(nil, vim.lsp.get_client_by_id(client_id), current)
   end)
 end
@@ -135,7 +141,7 @@ local function activate(buffer)
   end
   local config = vim.lsp.config.venue_reader
   config.root_dir(buffer, function(directory)
-    if not eligible(buffer) or root(buffer) ~= directory then
+    if not eligible(buffer) then
       return
     end
     local resolved = vim.deepcopy(config)
@@ -153,13 +159,10 @@ function M.stop()
 end
 
 function M.restart()
-  Server.resolve(options.server, function(err, argv, version)
+  Native.prepare(function(err)
     if err then
       notify(err, vim.log.levels.ERROR)
-      return
-    end
-    ready = { argv = argv, version = version }
-    if #vim.lsp.get_clients({ name = "venue_reader" }) == 0 then
+    elseif #vim.lsp.get_clients({ name = "venue_reader" }) == 0 then
       M.start()
     else
       vim.cmd("lsp restart venue_reader")
@@ -175,10 +178,11 @@ function M.status(buffer)
     session = client and {
       root = client.config.root_dir,
       argv = client.config.venue_reader_argv,
+      transport = client.config.venue_reader_transport,
       version = client.server_info and client.server_info.version,
       buffers = vim.tbl_keys(client.attached_buffers),
     },
-    acquisition = Server.status(),
+    acquisition = Native.acquisition(),
     annotations = Summaries.status(buffer, client and client.id),
     treesitter = Treesitter.status(buffer),
   }
@@ -208,7 +212,6 @@ end
 function M.summary(mode)
   local updated = vim.deepcopy(options)
   updated.summary.mode = mode
-  updated.settings.fix.messageSummary.channels = nil
   local changed = M.setup(updated)
   if not changed then
     for _, client in ipairs(vim.lsp.get_clients({ name = "venue_reader" })) do
@@ -245,17 +248,11 @@ function M.tag(number, value)
   return Commands.tag(number, value)
 end
 
-local function settings(value)
-  local result = vim.deepcopy(value)
-  if next(result.fix or {}) == nil then
-    result.fix = vim.empty_dict()
-  end
-  return result
-end
-
 function M.setup(value)
   assert(vim.fn.has("nvim-0.12") == 1, "venue-reader requires Neovim >=0.12")
   value = value or {}
+  assert(value.runtime == nil, "Use server instead of runtime")
+  assert(value.settings == nil, "Use vim.lsp.config('venue_reader', { settings = ... })")
   local candidate = vim.tbl_deep_extend("force", vim.deepcopy(defaults), value)
   assert(type(candidate.server.auto_install) == "boolean", "server.auto_install must be boolean")
   assert(type(candidate.treesitter) == "table", "treesitter must be a table")
@@ -283,22 +280,15 @@ function M.setup(value)
       assert(type(argument) == "string" and argument ~= "", "server.cmd arguments must be strings")
     end
   end
-  candidate.settings = settings(Summaries.settings(candidate.summary, candidate.settings))
+  Summaries.settings(candidate.summary, {})
   Highlights.setup()
   local mode_changed = Summaries.configure(candidate.summary, managed)
-  local changed = options and not vim.deep_equal(options.settings, candidate.settings)
   generation = generation + 1
   options = candidate
   Commands.setup(options.commands, acquire, managed)
-  if changed then
-    for _, client in ipairs(vim.lsp.get_clients({ name = "venue_reader" })) do
-      if managed(client) then
-        client.settings = vim.deepcopy(options.settings)
-        client.config.settings = vim.deepcopy(options.settings)
-        client:notify("workspace/didChangeConfiguration", { settings = client.settings })
-      end
-    end
-  end
+  Native.setup(options, eligible, context_root, function(buffer)
+    return lifetimes[buffer]
+  end)
   if mode_changed then
     for _, client in ipairs(vim.lsp.get_clients({ name = "venue_reader" })) do
       if managed(client) then
@@ -309,65 +299,24 @@ function M.setup(value)
     end
   end
   vim.filetype.add({ extension = { fix = "fix" } })
-  vim.lsp.config.venue_reader = { -- luacheck: ignore 122
-    venue_reader_owner = owner_marker,
-    filetypes = { "fix" },
-    settings = options.settings,
-    exit_timeout = 1000,
-    before_init = Commands.before_init,
-    capabilities = vim.deepcopy(Capabilities),
-    handlers = {
-      ["textDocument/inlayHint"] = Summaries.handler,
-      ["workspace/configuration"] = Commands.configuration,
-    },
-    on_exit = function(_, _, client_id)
-      Commands.closed(client_id)
-    end,
-    on_init = function(client)
-      if not vim.deep_equal(client.settings, options.settings) then
-        client.settings = vim.deepcopy(options.settings)
-        client.config.settings = vim.deepcopy(options.settings)
-        client:notify("workspace/didChangeConfiguration", { settings = client.settings })
-      end
-      vim.lsp.codelens.enable(options.summary.mode == "codelens", { client_id = client.id })
-    end,
-    root_dir = function(buffer, on_dir)
-      if not eligible(buffer) then
-        if vim.api.nvim_buf_is_valid(buffer) and vim.bo[buffer].filetype == "fix" then
-          vim.notify_once("venue-reader: use :file /path/log.fix to name the buffer")
-        end
-        return
-      end
-      local directory = root(buffer)
-      local captured_generation, lifetime = generation, lifetimes[buffer]
-      Server.resolve(options.server, function(err, argv, version)
-        if
-          not eligible(buffer)
-          or lifetimes[buffer] ~= lifetime
-          or root(buffer) ~= directory
-          or generation ~= captured_generation
-          or not vim.lsp.is_enabled("venue_reader")
-        then
-          return
-        end
-        if err then
-          notify(err, vim.log.levels.ERROR)
-          return
-        end
-        ready = { argv = argv, version = version }
-        on_dir(directory)
-      end)
-    end,
-    cmd = function(dispatchers, config)
-      config.venue_reader_argv = vim.deepcopy(assert(ready, "Server discovery is not ready").argv)
-      return vim.lsp.rpc.start(config.venue_reader_argv, dispatchers)
-    end,
-  }
   local group = vim.api.nvim_create_augroup("venue-reader", { clear = true })
+  vim.api.nvim_create_autocmd("LspAttach", {
+    group = group,
+    callback = function(event)
+      local client = vim.lsp.get_client_by_id(event.data.client_id)
+      if client and client.name == "venue_reader" and not Native.check(client.config) then
+        notify(
+          "Required adapter hooks were replaced; register structural overrides before setup",
+          vim.log.levels.ERROR
+        )
+      end
+    end,
+  })
   vim.api.nvim_create_autocmd("BufFilePre", {
     group = group,
     callback = function(event)
       lifetimes[event.buf] = (lifetimes[event.buf] or 0) + 1
+      command_clients[event.buf] = nil
       for _, client in ipairs(vim.lsp.get_clients({ bufnr = event.buf })) do
         if managed(client) then
           vim.lsp.buf_detach_client(event.buf, client.id)
@@ -385,6 +334,7 @@ function M.setup(value)
     group = group,
     callback = function(event)
       lifetimes[event.buf] = nil
+      command_clients[event.buf] = nil
     end,
   })
   vim.keymap.set("n", "<Plug>(VenueReaderYank)", M.operator, {

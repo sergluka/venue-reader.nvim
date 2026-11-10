@@ -9,6 +9,7 @@ local success, result = pcall(function()
     "transport",
     "dependencies",
     "lifecycle",
+    "native_configuration",
     "installation",
     "summaries",
     "highlights",

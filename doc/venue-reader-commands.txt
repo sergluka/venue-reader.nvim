@@ -7,7 +7,7 @@ Wiki: https://github.com/sergluka/venue-reader.nvim/wiki/Commands
 
 :VenueReader start              Native :lsp enable venue_reader.
 :VenueReader stop               Native :lsp stop venue_reader.
-:VenueReader restart            Resolve executable, then native restart/enable.
+:VenueReader restart            Native restart/enable of configured transport.
 :VenueReader status             Show session/server/annotation/grammar state.
 :VenueReader install server     Explicit server discovery/installation retry.
 :VenueReader install grammar    Explicit optional parser acquisition retry.
@@ -32,8 +32,8 @@ clients; :lsp disable venue_reader prevents future automatic attachment.
 
 After a crash, native Neovim reports the exit; enable attaches eligible buffers
 again. There is no separate plugin suppression or automatic recovery loop.
-Restart resolves the executable, then delegates to native restart, or enables
-when no client is running. Unattached command sessions use the same lifecycle.
+Restart delegates to native restart, or enables when no client is running.
+The configured native transport or server discovery supplies the executable. Unattached command sessions use the same lifecycle.
 
 ==============================================================================
 Server commands                                  *venue-reader-server-commands*
@@ -62,8 +62,9 @@ Side(54) = 1 in the second tag example.
 
 Yank/settings require a named FIX buffer, an attached native client and ready
 server configuration. Tag/dictionary also work without a FIX document. They
-reuse the current owned client or a session matching cwd's nearest
-.venue-reader.toml root, otherwise cwd. A new session starts unattached through
+reuse the current owned client or resolve the configured root for the invoking
+buffer. By default the root is cwd's nearest .venue-reader.toml, otherwise cwd;
+native root_dir can supply another rule. A new session starts unattached through
 native LSP and can be reused by later FIX buffers. These commands do not change
 an unrelated buffer's filetype.
 

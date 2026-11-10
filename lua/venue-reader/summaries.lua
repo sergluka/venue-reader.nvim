@@ -188,16 +188,9 @@ function M.settings(summary, settings)
   )
   local result = vim.deepcopy(settings)
   result.fix = result.fix or {}
-  local configured = result.fix.messageSummary or {}
-  for key, expected in pairs(mode.channels) do
-    local explicit = configured.channels and configured.channels[key]
-    assert(
-      explicit == nil or explicit == expected,
-      "settings.fix.messageSummary.channels." .. key .. " contradicts summary.mode"
-    )
-  end
-  result.fix.messageSummary = vim.tbl_deep_extend("force", configured, {
-    channels = mode.channels,
+  -- The selected mode overrides channel values from vim.lsp.config and live client settings.
+  result.fix.messageSummary = vim.tbl_deep_extend("force", result.fix.messageSummary or {}, {
+    channels = vim.deepcopy(mode.channels),
     semanticTokens = summary.semantic_highlighting and mode.channels.inlayHints,
   })
   return result
