@@ -40,6 +40,24 @@ OS/architecture, exact Neovim/server/dependency versions and artifact checksums
 with each acceptance run. Reuse the documented isolated grammar smoke for an
 actual optional-parser installation check.
 
+## Progressive document symbols
+
+`make test SUITE=symbols` uses Python 3 to run a controlled stdio LSP peer and the
+pinned Telescope/plenary sources prepared by `make prepare-tests`. It checks the
+real picker and native transport, including early selection, live queries,
+ordinary marker filtering, cancellation, edits, failures and progress routing.
+The public command is also checked through a managed native client.
+
+The suite runs three unpaced 50,000-symbol bursts. To retain timing observations:
+
+```sh
+VENUE_READER_SYMBOL_BENCHMARK=/absolute/path/to/burst.json make test SUITE=symbols
+```
+
+The output records first selectable row, completion, refresh count and maximum
+5 ms heartbeat interval. Every run also verifies all 50,000 rows remain searchable.
+This is fake-server client evidence, not real-server performance or a memory bound.
+
 ## Native macOS checks — NOT RUN
 
 These are placeholders for execution on native macOS, separately for each claimed

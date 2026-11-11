@@ -12,6 +12,7 @@ local success, result = pcall(function()
     "native_configuration",
     "installation",
     "summaries",
+    "symbols",
     "highlights",
     "selection",
     "commands",

@@ -17,6 +17,7 @@ Wiki: https://github.com/sergluka/venue-reader.nvim/wiki/Commands
 :VenueReader dictionary [name]  Choose or select a server dictionary.
 :VenueReader settings           Preview committed settings/sources/warnings.
 :VenueReader tag {number} [val] Preview a tag/value reference.
+:VenueReader symbols            Search arriving document symbols with Telescope.
 :checkhealth venue-reader       Inspect requirements/current global state.
 
 Only yank accepts an Ex range. Tag numbers are positive decimal u32 integers;
@@ -88,6 +89,7 @@ operator()                     Expression mapping for decoded g@ operator.
 dictionary([name])             Choose or select the dictionary.
 settings()                     Preview current committed settings.
 tag(number[, value])           Preview tag/value reference.
+symbols([opts])                Open the progressive Telescope symbol picker.
 textobject(kind)               Select tag/value/field/message/comment via syntax.
 
 Examples: >lua
@@ -98,6 +100,48 @@ Examples: >lua
     venue.tag(54, "1")
 <
 textobject() needs the optional engine in |venue-reader-textobjects|.
+
+==============================================================================
+Document symbols                                       *venue-reader-symbols*
+
+Install telescope.nvim and plenary.nvim, then open a named FIX buffer with an
+attached Venue Reader client and run :VenueReader symbols. Missing Telescope
+reports an installation error; it does not silently open another interface.
+Native vim.lsp.buf.document_symbol() and :Telescope lsp_document_symbols remain
+independent commands.
+
+The picker opens immediately. Search and select received symbols while
+"Loading symbols…" is visible. A server percentage describes processing work,
+not remaining time or the fraction of all symbols received. Work-done 100%
+does not finish loading until the response and local conversion finish.
+Servers without partial results remain usable through their final response.
+
+Search covers received symbols at the configured server depth and limits.
+An empty search while loading is provisional. The server's human truncation
+marker follows ordinary text/kind filtering and sorting; its absence is not a
+guarantee of exhaustive results. No separate truncation warning is displayed.
+
+Close or select a result to cancel remaining work. Source edits clear old
+locations immediately and restart after 150 ms without another edit, preserving
+the query. Continuous file reloads can postpone useful results. Errors and
+disconnects clear partial results. Closed pickers are not cached for resume.
+
+Lua accepts Telescope options and these adapter options: >lua
+    require("venue-reader").symbols({
+      bufnr = vim.api.nvim_get_current_buf(),
+      timeout_ms = 30000,
+      symbols = { "Object", "Field", "Array" },
+      previewer = false,
+    })
+<
+All symbol kinds are included by default. symbols can be a kind name or a list;
+the same filter applies to the marker. The picker respects configured sorter
+case rules. timeout_ms overrides |venue-reader-options| for this invocation.
+The function returns the Telescope picker. No user mapping is installed.
+
+Incoming queues have no capacity limit. Large roots are converted intact and
+can pause the UI; slow consumers may accumulate memory. Streaming improves
+early access, but does not make the whole result or any individual root small.
 
 ==============================================================================
 Decoded yank                                               *venue-reader-yank*

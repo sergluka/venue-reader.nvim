@@ -26,6 +26,7 @@ local command_clients = {}
 local defaults = {
   server = { auto_install = true },
   commands = { timeout_ms = 5000 },
+  symbols = { timeout_ms = 30000 },
   treesitter = { enabled = true, auto_install = true },
   summary = { mode = "front", semantic_highlighting = true },
 }
@@ -228,6 +229,17 @@ function M.yank(value)
   return Yank.run(value)
 end
 
+function M.symbols(value)
+  local opts = vim.tbl_extend("force", {}, options and options.symbols or {}, value or {})
+  local buffer = opts.bufnr or vim.api.nvim_get_current_buf()
+  local client = selected_client(buffer)
+  assert(
+    eligible(buffer) and client,
+    "Open a named FIX buffer with an attached Venue Reader client"
+  )
+  return require("venue-reader.symbols").open(client, buffer, opts)
+end
+
 function M.textobject(kind)
   return Treesitter.textobject(kind)
 end
@@ -254,6 +266,15 @@ function M.setup(value)
   assert(value.runtime == nil, "Use server instead of runtime")
   assert(value.settings == nil, "Use vim.lsp.config('venue_reader', { settings = ... })")
   local candidate = vim.tbl_deep_extend("force", vim.deepcopy(defaults), value)
+  assert(type(candidate.symbols) == "table", "symbols must be a table")
+  local symbol_timeout = candidate.symbols.timeout_ms
+  assert(
+    type(symbol_timeout) == "number"
+      and symbol_timeout >= 0
+      and symbol_timeout < math.huge
+      and symbol_timeout % 1 == 0,
+    "symbols.timeout_ms must be a finite non-negative integer"
+  )
   assert(type(candidate.server.auto_install) == "boolean", "server.auto_install must be boolean")
   assert(type(candidate.treesitter) == "table", "treesitter must be a table")
   assert(
@@ -384,12 +405,13 @@ function M.setup(value)
         or action == "stop"
         or action == "restart"
         or action == "settings"
+        or action == "symbols"
       then
         assert(#arguments == 1, action .. " takes no arguments")
         M[action]()
       else
         error(
-          "Use start, stop, restart, status, summary, yank, dictionary, settings, tag"
+          "Use start, stop, restart, status, summary, symbols, yank, dictionary, settings, tag"
             .. " or install server|grammar"
         )
       end
@@ -417,6 +439,7 @@ function M.setup(value)
         "yank",
         "dictionary",
         "settings",
+        "symbols",
         "tag",
       }
     end,

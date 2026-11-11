@@ -28,5 +28,10 @@ function M.check()
   end
   vim.health.info(vim.inspect(status))
   vim.health.info("Tree-sitter is optional; summaries adapt native LSP responses")
+  if #vim.api.nvim_get_runtime_file("lua/telescope/init.lua", false) > 0 then
+    vim.health.ok("Telescope is available for :VenueReader symbols")
+  else
+    vim.health.info("Optional telescope.nvim and plenary.nvim enable :VenueReader symbols")
+  end
 end
 return M

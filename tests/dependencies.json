@@ -17,5 +17,13 @@
   "textobjects": {
     "repository": "https://github.com/nvim-treesitter/nvim-treesitter-textobjects.git",
     "commit": "5c7b0263797dfd1bd6202f2b219f3b53a80b2187"
+  },
+  "telescope": {
+    "repository": "https://github.com/nvim-telescope/telescope.nvim.git",
+    "commit": "40aedd8a68c78a656a10a8d62d80c54af59420fb"
+  },
+  "plenary": {
+    "repository": "https://github.com/nvim-lua/plenary.nvim.git",
+    "commit": "74b06c6c75e4eeb3108ec01852001636d85a932b"
   }
 }

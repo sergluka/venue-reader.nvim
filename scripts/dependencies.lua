@@ -43,6 +43,8 @@ local function test_sources()
     { "nvim-treesitter", manifest.treesitter },
     { "nvim-treesitter-textobjects", manifest.textobjects },
     { "tree-sitter-fix", manifest.grammar },
+    { "telescope.nvim", manifest.telescope },
+    { "plenary.nvim", manifest.plenary },
   }
 end
 

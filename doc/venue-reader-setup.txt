@@ -33,6 +33,8 @@ use Tree-sitter main APIs; ensure your LazyVim configuration uses those APIs.
 The inner spec also works in a standalone lazy.nvim configuration. The manager
 is only needed for parser installation; textobjects is only needed for syntax
 selection/navigation. No other Neovim plugin is required for LSP features.
+The progressive |venue-reader-symbols| picker additionally needs telescope.nvim
+and plenary.nvim; native document-symbol commands do not.
 
 ==============================================================================
 Native packages                                     *venue-reader-pack*
@@ -62,6 +64,7 @@ Defaults: >lua
       server = { auto_install = true },
       summary = { mode = "front", semantic_highlighting = true },
       commands = { timeout_ms = 5000 },
+      symbols = { timeout_ms = 30000 },
       treesitter = { enabled = true, auto_install = true },
     })
 <
@@ -99,6 +102,12 @@ is created and covers root resolution, discovery/installation, bootstrap and
 requests. Time spent choosing a dictionary is excluded. Timeouts cancel native
 outstanding requests; late root resolution cannot start a client solely for an
 expired command, and late answers do not write registers or previews.
+
+symbols.timeout_ms ~
+Finite non-negative integer; default 30000. Cancel document symbols after this
+many milliseconds without a result, owned progress notification or response.
+Zero disables the inactivity deadline. Each symbols(opts) call may override it.
+This deadline is independent of commands.timeout_ms.
 
 Native server settings ~
 Register server settings with vim.lsp.config, separately from adapter options:

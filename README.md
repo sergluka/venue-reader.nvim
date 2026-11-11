@@ -7,6 +7,8 @@ without this plugin.
 The plugin reuses or installs the server, renders message summaries and adds
 decoded yank and dictionary helpers. Hover, diagnostics, code actions, document
 symbols, field hints and semantic highlighting use Neovim's native LSP support.
+With optional Telescope, `:VenueReader symbols` also searches arriving document
+symbols and allows navigation before the request finishes.
 Optional Tree-sitter adds base highlighting, SOH conceal and structural selection
 and navigation. It is not required for LSP features.
 
@@ -134,6 +136,16 @@ Use native LSP interfaces, for example `:lua vim.lsp.buf.hover()` and
 | `:VenueReader dictionary` | Choose a server dictionary with `vim.ui.select` |
 | `:VenueReader settings` | Preview effective settings, sources and warnings |
 | `:VenueReader tag 54 1` | Look up `Side(54) = 1` |
+| `:VenueReader symbols` | Search and select arriving document symbols with Telescope |
+
+The symbol picker requires `nvim-telescope/telescope.nvim` and
+`nvim-lua/plenary.nvim`. It shows `Loading symbols…` while receiving results,
+with a percentage when the server supplies one. Search applies to received
+symbols; the server's depth and item limits still apply. A truncation marker is
+filtered like any other entry. Closing or selecting cancels remaining work;
+editing the source clears old locations and restarts after a short pause.
+Native `vim.lsp.buf.document_symbol()` and Telescope's stock command remain
+available independently. See `:help venue-reader-symbols` for options.
 
 Decode the field under the cursor with `:VenueReader yank`, or lines with
 `:10,20VenueReader yank a`, then paste normally with `p`/`P`. For a decoded

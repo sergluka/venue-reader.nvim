@@ -1,6 +1,8 @@
 local root = assert(vim.env.VENUE_READER_TEST_ROOT)
 vim.opt.runtimepath:prepend(root)
 vim.opt.runtimepath:prepend(root .. "/.test-deps/mini.test")
+vim.opt.runtimepath:prepend(root .. "/.test-deps/plenary.nvim")
+vim.opt.runtimepath:prepend(root .. "/.test-deps/telescope.nvim")
 package.path = root .. "/?.lua;" .. root .. "/?/init.lua;" .. package.path
 vim.lsp.log.set_level("ERROR")
 vim.api.nvim_set_option_value("more", false, {})

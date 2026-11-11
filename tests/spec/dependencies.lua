@@ -113,6 +113,8 @@ tests["prepared parser rejects tampered bytes and stale source metadata"] = func
       "nvim-treesitter",
       "nvim-treesitter-textobjects",
       "tree-sitter-fix",
+      "telescope.nvim",
+      "plenary.nvim",
     }) do
       local result = vim
         .system({
