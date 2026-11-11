@@ -131,4 +131,50 @@ tests["local server supplies colored cached hidden summaries in one native respo
   equal(client.requests, requests)
 end
 
+tests["symbol picker selects the source field from real server ranges"] = function()
+  local plugin = require("venue-reader")
+  local Symbols = require("tests.support.symbols")
+  local picker
+  plugin.setup({
+    server = { cmd = { assert(vim.env.VENUE_READER_TEST_SERVER), "--stdio" } },
+    treesitter = { enabled = false },
+    summary = { mode = "off" },
+  })
+  MiniTest.finally(function()
+    if picker then
+      Symbols.close(picker)
+    end
+    vim.lsp.enable("venue_reader", false)
+    for _, client in ipairs(vim.lsp.get_clients({ name = "venue_reader" })) do
+      client:stop(true)
+    end
+  end)
+  local line = "8=FIX.4.4|35=D|58=Привет|55=SYNTHETIC|54=1|"
+  local lines = {}
+  for index = 1, 300 do
+    lines[index] = line
+  end
+  local buffer = Lsp.buffer(lines)
+  vim.api.nvim_set_current_buf(buffer)
+  Lsp.wait(function()
+    local client = vim.lsp.get_clients({ name = "venue_reader", bufnr = buffer })[1]
+    return client and client.initialized
+  end, "real symbol client")
+  local field_start = assert(line:find("55=", 1, true))
+  for _, column in ipairs({ field_start - 1, field_start + 5 }) do
+    vim.api.nvim_win_set_cursor(0, { 300, column })
+    vim.cmd("VenueReader symbols")
+    picker = require("telescope.actions.state").get_current_picker(vim.api.nvim_get_current_buf())
+    Lsp.wait(function()
+      local entry = picker:get_selection()
+      return entry and entry.lnum == 300 and entry.col == field_start
+    end, "real source field selected beyond the first result window")
+    equal(picker:get_selection().symbol_type, "Field")
+    assert(picker:get_selection().symbol_name:find("SYNTHETIC", 1, true))
+    Symbols.close(picker)
+    picker = nil
+    equal(vim.api.nvim_get_current_buf(), buffer)
+  end
+end
+
 return tests

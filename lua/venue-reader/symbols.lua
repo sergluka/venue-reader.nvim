@@ -3,6 +3,34 @@ local Request = require("venue-reader.symbols.request")
 local observers = {}
 local next_picker = 0
 
+local function before(left, right)
+  return left.line < right.line or (left.line == right.line and left.character < right.character)
+end
+
+local function containing_ranges(symbol, position, uri)
+  local ranges, index = {}, 0
+  local function visit(node, depth)
+    if node.location or node.selectionRange then
+      index = index + 1
+      local range = node.location and node.location.range or node.range
+      if
+        range
+        and (not node.location or node.location.uri == uri)
+        and not before(position, range.start)
+        and before(position, range["end"])
+      then
+        ranges[index] = { range = range, depth = depth }
+      end
+    end
+    for _, child in ipairs(node.children or {}) do
+      visit(child, depth + 1)
+    end
+  end
+  -- Match the preorder used by native symbols_to_items without replacing its conversion.
+  visit(symbol, 0)
+  return ranges
+end
+
 local function watch(buffer, callback)
   local observer = observers[buffer]
   if not observer then
@@ -68,6 +96,17 @@ function M.open(client, buffer, options)
   end
   local entry_maker = opts.entry_maker or require("telescope.make_entry").gen_from_lsp_symbols(opts)
   local source_uri = vim.uri_from_bufnr(buffer)
+  local source_window = vim.api.nvim_get_current_win()
+  if vim.api.nvim_win_get_buf(source_window) ~= buffer then
+    source_window = vim.fn.win_findbuf(buffer)[1]
+  end
+  local cursor_position = source_window
+    and vim.lsp.util.make_position_params(source_window, client.offset_encoding).position
+  local cursor_entry, cursor_range
+  local cursor_anchor = 1
+  local function stop_cursor_selection()
+    cursor_position, cursor_entry, cursor_range = nil, nil, nil
+  end
   local entries, queue, timers = {}, {}, {}
   local queue_head = 1
   local epoch = 0
@@ -120,18 +159,21 @@ function M.open(client, buffer, options)
 
   local function finder()
     local snapshot, count, captured, stopped = entries, #entries, epoch, false
+    local anchor = cursor_anchor
     return setmetatable({
       close = function()
         stopped = true
       end,
     }, {
-      __call = function(_, _, process, complete)
+      __call = function(_, prompt, process, complete)
         local started = vim.uv.hrtime()
         for index = 1, count do
           if stopped or not current(captured) then
             return
           end
-          local entry = snapshot[index]
+          -- Telescope only exposes its first result window; keep the source field in it.
+          local source_index = prompt == "" and ((anchor + index - 2) % count + 1) or index
+          local entry = snapshot[source_index]
           entry.index = index
           if process(entry) then
             return
@@ -163,6 +205,8 @@ function M.open(client, buffer, options)
   end
 
   local function clear()
+    stop_cursor_selection()
+    cursor_anchor = 1
     entries, queue, queue_head, processing = {}, {}, 1, false
     stop_timer("convert")
     if picker then
@@ -236,7 +280,8 @@ function M.open(client, buffer, options)
           fail(success and "Invalid document symbol" or items)
           return
         end
-        for _, item in ipairs(items) do
+        local ranges = cursor_position and containing_ranges(symbol, cursor_position, source_uri)
+        for index, item in ipairs(items) do
           if not allowed or allowed[item.kind:lower()] then
             local made, entry = pcall(entry_maker, item)
             if not made then
@@ -259,6 +304,25 @@ function M.open(client, buffer, options)
                 end
               end
               entries[#entries + 1] = entry
+              local candidate = ranges and ranges[index]
+              if candidate then
+                local range, previous = candidate.range, cursor_range and cursor_range.range
+                if
+                  not previous
+                  or (
+                    not before(range.start, previous.start)
+                    and not before(previous["end"], range["end"])
+                    and (
+                      before(previous.start, range.start)
+                      or before(range["end"], previous["end"])
+                      or candidate.depth > cursor_range.depth
+                    )
+                  )
+                then
+                  cursor_entry, cursor_range = entry, candidate
+                  cursor_anchor = #entries
+                end
+              end
             end
           end
         end
@@ -348,7 +412,44 @@ function M.open(client, buffer, options)
       return get_selection(self)
     end
   end
+  local set_selection = picker.set_selection
+  local do_selection = picker._do_selection
+  local automatic_selection = false
+  -- Telescope also calls set_selection when a finder completes; only user calls disarm tracking.
+  picker._do_selection = function(self, prompt)
+    automatic_selection = true
+    local success, err = pcall(do_selection, self, prompt)
+    automatic_selection = false
+    if not success then
+      error(err)
+    end
+  end
+  for _, method in ipairs({ "set_selection", "add_selection", "remove_selection" }) do
+    local original = picker[method]
+    picker[method] = function(self, ...)
+      if not automatic_selection then
+        stop_cursor_selection()
+      end
+      return original(self, ...)
+    end
+  end
+  picker:register_completion_callback(function(self)
+    if cursor_position and current() and self:_get_prompt() == "" and cursor_entry then
+      local index = self.manager:find_entry(cursor_entry)
+      if index and self:get_selection() ~= cursor_entry then
+        set_selection(self, self:get_row(index))
+      end
+    end
+  end)
   picker:find()
+  if picker:_get_prompt() ~= "" then
+    stop_cursor_selection()
+  end
+  vim.api.nvim_buf_attach(picker.prompt_bufnr, false, {
+    on_lines = function()
+      stop_cursor_selection()
+    end,
+  })
   unwatch = watch(buffer, function(event)
     if event == "detached" then
       close_window()

@@ -17,6 +17,221 @@ local function failed(picker)
   end, "failure clears partial results")
 end
 
+local function ranged_symbol(name, start_column, end_column, kind, children)
+  return {
+    name = name,
+    kind = kind or 8,
+    range = {
+      start = { line = 0, character = start_column },
+      ["end"] = { line = 0, character = end_column },
+    },
+    selectionRange = {
+      start = { line = 0, character = start_column },
+      ["end"] = { line = 0, character = math.min(start_column + 2, end_column) },
+    },
+    children = children,
+  }
+end
+
+local function field_source(fixture, column, line)
+  vim.api.nvim_buf_set_lines(fixture.buffer, 0, -1, false, { line or "35=D|55=ABC|54=1|" })
+  vim.api.nvim_win_set_cursor(0, { 1, column })
+end
+
+local function wait_selected(picker, name)
+  Lsp.wait(function()
+    local entry = picker:get_selection()
+    return entry and entry.symbol_name == name
+  end, "selected source symbol " .. name)
+end
+
+local function accept_selection()
+  -- Consume Telescope's queued insert-mode entry and mapped acceptance together.
+  vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<CR>", true, false, true), "mx", false)
+end
+
+local function field_tree()
+  return ranged_symbol("Message", 0, 16, 19, {
+    ranged_symbol("MessageType", 0, 4),
+    ranged_symbol("Group", 5, 16, 18, {
+      ranged_symbol("Symbol", 5, 11),
+      ranged_symbol("Side", 12, 16),
+    }),
+  })
+end
+
+tests["source tag and value positions select the innermost field before completion"] = function()
+  local fixture = Symbols.fixture()
+  for _, column in ipairs({ 5, 8 }) do
+    field_source(fixture, column)
+    local picker, request = fixture:open()
+    fixture:chunk(request, { field_tree() }, picker, 5)
+    wait_selected(picker, "Symbol")
+    assert(Symbols.has_status(picker, "Loading symbols"))
+    accept_selection()
+    equal(vim.api.nvim_get_current_buf(), fixture.buffer)
+    equal(vim.api.nvim_win_get_cursor(0), { 1, 5 })
+    assert(fixture:cancelled(request))
+  end
+end
+
+tests["late source match replaces the containing parent while streaming"] = function()
+  local fixture = Symbols.fixture()
+  field_source(fixture, 8)
+  local picker, request = fixture:open()
+  fixture:chunk(request, { ranged_symbol("Message", 0, 16, 19) }, picker, 1)
+  wait_selected(picker, "Message")
+  fixture:chunk(request, { ranged_symbol("Symbol", 5, 11) }, picker, 2)
+  wait_selected(picker, "Symbol")
+  assert(Symbols.has_status(picker, "Loading symbols"))
+  fixture:chunk(request, { ranged_symbol("Unrelated", 12, 16) }, picker, 3)
+  wait_selected(picker, "Symbol")
+end
+
+tests["late source targets beyond the visible list work in either sorting direction"] = function()
+  local fixture = Symbols.fixture()
+  for _, strategy in ipairs({ "ascending", "descending" }) do
+    field_source(fixture, 1051, string.rep("aa|", 400))
+    local picker, request = fixture:open({ sorting_strategy = strategy })
+    local first, last = {}, {}
+    for index = 0, 399 do
+      local entry = ranged_symbol(
+        index == 350 and "CursorTarget" or ("Field" .. index),
+        index * 3,
+        index * 3 + 2
+      )
+      local batch = index < 300 and first or last
+      batch[#batch + 1] = entry
+    end
+    fixture:chunk(request, first, picker, 300)
+    assert(picker.max_results < 350, "source target must be outside the initial visible rows")
+    fixture:chunk(request, last, picker, 400)
+    wait_selected(picker, "CursorTarget")
+    assert(Symbols.has_status(picker, "Loading symbols"))
+    accept_selection()
+    equal(vim.api.nvim_get_current_buf(), fixture.buffer)
+    equal(vim.api.nvim_win_get_cursor(0), { 1, 1050 })
+  end
+end
+
+tests["final-only symbol trees select the field under the source cursor"] = function()
+  local fixture = Symbols.fixture()
+  field_source(fixture, 14)
+  local picker, request = fixture:open()
+  fixture:control("final", { request = request.id, result = { field_tree() } })
+  finished(picker)
+  wait_selected(picker, "Side")
+end
+
+tests["filtered source fields fall back to their available containing group"] = function()
+  local fixture = Symbols.fixture()
+  field_source(fixture, 8)
+  local picker, request = fixture:open({ symbols = { "Object", "Array" } })
+  fixture:chunk(request, { field_tree() }, picker, 2)
+  wait_selected(picker, "Group")
+end
+
+tests["full ranges exclude their end position when finding the source symbol"] = function()
+  local fixture = Symbols.fixture()
+  field_source(fixture, 11)
+  local picker, request = fixture:open()
+  fixture:chunk(request, { field_tree() }, picker, 5)
+  wait_selected(picker, "Group")
+end
+
+tests["manual selection is preserved when the source match arrives later"] = function()
+  local fixture = Symbols.fixture()
+  for _, navigate in ipairs({
+    function(picker)
+      picker:set_selection(picker:get_row(2))
+    end,
+    function(picker)
+      require("telescope.actions").move_selection_next(picker.prompt_bufnr)
+    end,
+    function(picker)
+      require("telescope.actions").move_selection_previous(picker.prompt_bufnr)
+    end,
+  }) do
+    field_source(fixture, 8)
+    local picker, request = fixture:open()
+    fixture:chunk(request, {
+      ranged_symbol("First", 0, 2),
+      ranged_symbol("Second", 2, 4),
+    }, picker, 2)
+    navigate(picker)
+    wait_selected(picker, "Second")
+    fixture:chunk(request, { ranged_symbol("Symbol", 5, 11) }, picker, 3)
+    wait_selected(picker, "Second")
+    Symbols.close(picker)
+  end
+end
+
+tests["selection before any results prevents late automatic cursor matching"] = function()
+  local fixture = Symbols.fixture()
+  field_source(fixture, 8)
+  local picker, request = fixture:open()
+  picker:set_selection(0)
+  fixture:chunk(request, {
+    ranged_symbol("First", 0, 2),
+    ranged_symbol("Symbol", 5, 11),
+  }, picker, 2)
+  wait_selected(picker, "First")
+end
+
+tests["search then clearing the query does not reenable cursor matching"] = function()
+  local fixture = Symbols.fixture()
+  field_source(fixture, 8)
+  local picker, request = fixture:open()
+  fixture:chunk(request, {
+    ranged_symbol("First", 0, 2),
+    ranged_symbol("Second", 2, 4),
+  }, picker, 2)
+  Symbols.query(picker, "second", 1)
+  Symbols.query(picker, "", 2)
+  local selection = picker:get_selection()
+  fixture:chunk(request, { ranged_symbol("Symbol", 5, 11) }, picker, 3)
+  equal(picker:get_selection(), selection)
+end
+
+tests["initial search takes precedence over the source cursor"] = function()
+  local fixture = Symbols.fixture()
+  field_source(fixture, 8)
+  local picker, request = fixture:open({ default_text = "side" })
+  fixture:chunk(request, { field_tree() }, picker, 1)
+  wait_selected(picker, "Side")
+end
+
+tests["edits discard the original cursor position before a new generation"] = function()
+  local fixture = Symbols.fixture()
+  field_source(fixture, 8)
+  local picker, first = fixture:open()
+  vim.api.nvim_buf_set_lines(fixture.buffer, 0, -1, false, { "edited text for new symbols" })
+  local second
+  Lsp.wait(function()
+    second = fixture:state().requests[2]
+    return second ~= nil
+  end, "new generation after source edit")
+  assert(fixture:cancelled(first))
+  fixture:chunk(second, {
+    ranged_symbol("First", 0, 2),
+    ranged_symbol("OldCursorPosition", 5, 11),
+  }, picker, 2)
+  wait_selected(picker, "First")
+end
+
+tests["UTF-16 symbol ranges match UTF-8 source cursor bytes"] = function()
+  local fixture = Symbols.fixture()
+  equal(fixture.client.offset_encoding, "utf-16")
+  field_source(fixture, 10, "😀é|55=ABC|")
+  local picker, request = fixture:open()
+  fixture:chunk(request, {
+    ranged_symbol("Message", 0, 11, 19, { ranged_symbol("Symbol", 4, 10) }),
+  }, picker, 2)
+  wait_selected(picker, "Symbol")
+  accept_selection()
+  equal(vim.api.nvim_win_get_cursor(0), { 1, 7 })
+end
+
 tests["chunks are selectable and searchable before final response"] = function()
   local fixture = Symbols.fixture()
   local picker, request = fixture:open()

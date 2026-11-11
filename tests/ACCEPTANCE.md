@@ -48,6 +48,11 @@ real picker and native transport, including early selection, live queries,
 ordinary marker filtering, cancellation, edits, failures and progress routing.
 The public command is also checked through a managed native client.
 
+Cursor-selection cases cover nested full ranges, late batches, manual input,
+source edits, and UTF-16 positions. The real-server suite also opens the public
+picker from tag and value positions near the end of a 300-line synthetic file
+and verifies that the corresponding field is selected.
+
 The suite runs three unpaced 50,000-symbol bursts. To retain timing observations:
 
 ```sh
