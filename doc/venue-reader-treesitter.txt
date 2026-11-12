@@ -89,11 +89,18 @@ too. This is an accepted limit of the lightweight tracking.
 ==============================================================================
 SOH display                                             *venue-reader-conceal*
 
-The query can show SOH as a vertical bar without changing source bytes. The
-adapter leaves window options unchanged: conceallevel=0 leaves SOH unconcealed,
-and concealcursor controls the cursor line. Opt in for the current window:
+With the FIX parser active, the query shows SOH as a vertical bar without
+changing source bytes. The FIX ftplugin defaults to conceallevel=2 and
+concealcursor=nc: conceal stays active on the cursor line in Normal and
+Command-line modes. Insert and Visual modes reveal SOH on that line.
+
+Load the plugin before the buffer's FileType event. Setup does not reapply
+ftplugin defaults to buffers that were already open before plugin loading.
+
+Override these window-local defaults in after/ftplugin/fix.lua, or use
+:setlocal for the current window. For example, to display raw SOH:
 >vim
-    setlocal conceallevel=2 concealcursor=nc
+    setlocal conceallevel=0
 <
 ==============================================================================
 Selections                                          *venue-reader-textobjects*

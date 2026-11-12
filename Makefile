@@ -25,11 +25,11 @@ stress:
 	"$(NVIM)" --headless -u NONE -i NONE -l scripts/stress.lua
 
 lint:
-	stylua --check lua tests scripts
-	luacheck lua tests scripts
+	stylua --check lua tests scripts ftplugin
+	luacheck lua tests scripts ftplugin
 
 format:
-	stylua lua tests scripts
+	stylua lua tests scripts ftplugin
 
 dev:
 	NVIM_LOG_FILE= VENUE_READER_DEV_SERVER_DIR="$(SERVER_DIR)" "$(NVIM)" -u scripts/dev.lua
