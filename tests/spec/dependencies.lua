@@ -105,7 +105,7 @@ tests["central manifest controls artifact URLs and required runtime series"] = f
   end)
 end
 
-tests["prepared parser rejects tampered bytes and stale source metadata"] = function()
+tests["prepared sources and parser reject tampering and stale pins"] = function()
   isolated(function(dependencies, directory)
     local root = assert(vim.env.VENUE_READER_TEST_ROOT)
     for _, name in ipairs({
@@ -113,8 +113,7 @@ tests["prepared parser rejects tampered bytes and stale source metadata"] = func
       "nvim-treesitter",
       "nvim-treesitter-textobjects",
       "tree-sitter-fix",
-      "telescope.nvim",
-      "plenary.nvim",
+      "snacks.nvim",
     }) do
       local result = vim
         .system({
@@ -132,6 +131,19 @@ tests["prepared parser rejects tampered bytes and stale source metadata"] = func
     for _, name in ipairs({ "build.json", "runtime/parser/fix.so" }) do
       assert(vim.uv.fs_copyfile(root .. relative .. name, directory .. relative .. name))
     end
+    dependencies.verify_tests()
+    local snacks_init = directory .. "/.test-deps/snacks.nvim/lua/snacks/init.lua"
+    local original = vim.fn.readfile(snacks_init)
+    vim.fn.writefile({ "-- modified dependency" }, snacks_init)
+    MiniTest.expect.error(dependencies.verify_tests, "git failed")
+    vim.fn.writefile(original, snacks_init)
+    local manifest_path = directory .. "/tests/dependencies.json"
+    local manifest = vim.json.decode(table.concat(vim.fn.readfile(manifest_path), "\n"))
+    manifest.snacks.commit = string.rep("0", 40)
+    vim.fn.writefile({ vim.json.encode(manifest) }, manifest_path)
+    MiniTest.expect.error(function()
+      dofile(directory .. "/scripts/dependencies.lua").verify_tests()
+    end, "snacks.nvim revision differs from pin")
     dependencies.verify_tests()
     local binary = directory .. relative .. "runtime/parser/fix.so"
     vim.fn.writefile({ "not the prepared parser" }, binary)

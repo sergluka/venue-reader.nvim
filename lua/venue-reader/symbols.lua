@@ -7,30 +7,6 @@ local function before(left, right)
   return left.line < right.line or (left.line == right.line and left.character < right.character)
 end
 
-local function containing_ranges(symbol, position, uri)
-  local ranges, index = {}, 0
-  local function visit(node, depth)
-    if node.location or node.selectionRange then
-      index = index + 1
-      local range = node.location and node.location.range or node.range
-      if
-        range
-        and (not node.location or node.location.uri == uri)
-        and not before(position, range.start)
-        and before(position, range["end"])
-      then
-        ranges[index] = { range = range, depth = depth }
-      end
-    end
-    for _, child in ipairs(node.children or {}) do
-      visit(child, depth + 1)
-    end
-  end
-  -- Match the preorder used by native symbols_to_items without replacing its conversion.
-  visit(symbol, 0)
-  return ranges
-end
-
 local function watch(buffer, callback)
   local observer = observers[buffer]
   if not observer then
@@ -61,17 +37,17 @@ local function watch(buffer, callback)
   end
 end
 
+-- Upstream streaming will make this custom picker unnecessary:
+-- https://github.com/folke/snacks.nvim/issues/2993
 function M.open(client, buffer, options)
-  local available, pickers = pcall(require, "telescope.pickers")
-  assert(available, "Document symbols requires telescope.nvim and plenary.nvim")
-  local config = require("telescope.config").values
-  local actions = require("telescope.actions")
-  local async = require("plenary.async")
-  local opts = vim.tbl_extend("force", {}, options or {})
-  opts.bufnr = buffer
-  opts.path_display = opts.path_display or { "hidden" }
-  opts.cache_picker = false
-  opts.selection_strategy = "follow"
+  local available, snacks = pcall(require, "snacks")
+  assert(available, "Document symbols requires snacks.nvim")
+  local lsp = require("snacks.picker.source.lsp")
+  local opts = vim.tbl_deep_extend("force", {
+    tree = true,
+    keep_parents = true,
+    filter = { fix = true, default = true },
+  }, options or {})
   local timeout = opts.timeout_ms == nil and 30000 or opts.timeout_ms
   assert(
     type(timeout) == "number" and timeout >= 0 and timeout < math.huge and timeout % 1 == 0,
@@ -83,18 +59,14 @@ function M.open(client, buffer, options)
     client:supports_method("textDocument/documentSymbol", buffer),
     "Server does not provide document symbols"
   )
-
-  local allowed
-  if opts.symbols then
-    local kinds = type(opts.symbols) == "string" and { opts.symbols } or opts.symbols
-    assert(type(kinds) == "table" and vim.islist(kinds), "symbols must be a kind name or list")
-    allowed = {}
-    for _, kind in ipairs(kinds) do
-      assert(type(kind) == "string", "symbol kinds must be strings")
-      allowed[kind:lower()] = true
-    end
+  local kinds = opts.filter[vim.bo[buffer].filetype]
+  if kinds == nil then
+    kinds = opts.filter.default
   end
-  local entry_maker = opts.entry_maker or require("telescope.make_entry").gen_from_lsp_symbols(opts)
+  assert(
+    type(kinds) == "boolean" or (type(kinds) == "table" and vim.islist(kinds)),
+    "filter must provide a boolean or symbol-kind list for this filetype"
+  )
   local source_uri = vim.uri_from_bufnr(buffer)
   local source_window = vim.api.nvim_get_current_win()
   if vim.api.nvim_win_get_buf(source_window) ~= buffer then
@@ -102,23 +74,35 @@ function M.open(client, buffer, options)
   end
   local cursor_position = source_window
     and vim.lsp.util.make_position_params(source_window, client.offset_encoding).position
-  local cursor_entry, cursor_range
-  local cursor_anchor = 1
-  local function stop_cursor_selection()
-    cursor_position, cursor_entry, cursor_range = nil, nil, nil
-  end
+  local cursor_entry, cursor_depth
   local entries, queue, timers = {}, {}, {}
-  local queue_head = 1
-  local epoch = 0
+  local root, last = { root = true }, {}
+  local queue_head, epoch = 1, 0
   local changedtick = vim.api.nvim_buf_get_changedtick(buffer)
   local closed, loading, processing, responded = false, true, false, false
-  local failure, percentage, request, picker, unwatch
-  local refreshes = 0
-  local displayed = false
-  local representation
+  local failure, percentage, representation, request, picker, unwatch
   next_picker = next_picker + 1
   local group =
     vim.api.nvim_create_augroup("venue-reader-symbols-" .. next_picker, { clear = true })
+
+  local function stop_cursor_selection()
+    cursor_position, cursor_entry, cursor_depth = nil, nil, nil
+  end
+
+  local function valid_source()
+    return vim.api.nvim_buf_is_valid(buffer)
+      and vim.api.nvim_buf_is_loaded(buffer)
+      and vim.uri_from_bufnr(buffer) == source_uri
+      and vim.api.nvim_buf_get_changedtick(buffer) == changedtick
+  end
+
+  local function current(captured)
+    -- Buffer observers invalidate the generation before async finders resume.
+    if vim.in_fast_event() then
+      return not closed and (captured == nil or captured == epoch)
+    end
+    return not closed and (captured == nil or captured == epoch) and valid_source()
+  end
 
   local function stop_timer(name)
     local timer = timers[name]
@@ -148,74 +132,17 @@ function M.open(client, buffer, options)
     )
   end
 
-  local function current(captured)
-    return not closed
-      and (captured == nil or captured == epoch)
-      and vim.api.nvim_buf_is_valid(buffer)
-      and vim.api.nvim_buf_is_loaded(buffer)
-      and vim.uri_from_bufnr(buffer) == source_uri
-      and vim.api.nvim_buf_get_changedtick(buffer) == changedtick
-  end
-
-  local function finder()
-    local snapshot, count, captured, stopped = entries, #entries, epoch, false
-    local anchor = cursor_anchor
-    return setmetatable({
-      close = function()
-        stopped = true
-      end,
-    }, {
-      __call = function(_, prompt, process, complete)
-        local started = vim.uv.hrtime()
-        for index = 1, count do
-          if stopped or not current(captured) then
-            return
-          end
-          -- Telescope only exposes its first result window; keep the source field in it.
-          local source_index = prompt == "" and ((anchor + index - 2) % count + 1) or index
-          local entry = snapshot[source_index]
-          entry.index = index
-          if process(entry) then
-            return
-          end
-          if vim.uv.hrtime() - started >= 2000000 then
-            async.util.sleep(1)
-            started = vim.uv.hrtime()
-          end
-        end
-        if not stopped and current(captured) then
-          complete()
-        end
-      end,
-    })
-  end
-
-  local function refresh(immediate)
-    immediate = immediate or (not displayed and #entries > 0)
-    if closed or (timers.refresh and not immediate) then
+  local function refresh()
+    if not picker or closed then
       return
     end
-    later("refresh", (immediate or refreshes == 0) and 0 or 100, function()
-      if current() and vim.api.nvim_buf_is_valid(picker.prompt_bufnr) then
-        refreshes = refreshes + 1
-        displayed = displayed or #entries > 0
-        picker:refresh(finder(), { reset_prompt = false })
-      end
-    end)
-  end
-
-  local function clear()
-    stop_cursor_selection()
-    cursor_anchor = 1
-    entries, queue, queue_head, processing = {}, {}, 1, false
-    stop_timer("convert")
-    if picker then
-      picker.finder:close()
-      picker._selection_entry = nil
-      for _, entry in ipairs(picker:get_multi_selection()) do
-        picker._multi:drop(entry)
-      end
-    end
+    picker.title = loading
+        and ("Loading symbols…" .. (percentage and (" " .. math.floor(percentage) .. "%") or ""))
+      or (failure and ("Failed: " .. failure) or "Request finished")
+    picker.finder.task:resume()
+    picker.list.dirty = true
+    picker:update_titles()
+    picker:update()
   end
 
   local function cancel()
@@ -225,11 +152,41 @@ function M.open(client, buffer, options)
     end
   end
 
+  local function clear(preserve_items)
+    stop_cursor_selection()
+    entries, queue, queue_head, processing = {}, {}, 1, false
+    root, last = { root = true }, {}
+    stop_timer("convert")
+    if picker and not picker.closed then
+      -- Finish aborted coroutines before Snacks replaces their task objects.
+      for _, owner in ipairs({ picker.finder, picker.matcher }) do
+        local task = owner.task
+        task:abort()
+        task:step()
+      end
+      if preserve_items then
+        return
+      end
+      picker.finder.items = {}
+      -- Buffer observers run under textlock; invalidate without rendering.
+      picker.list.selected, picker.list.selected_map = {}, {}
+      picker.list:clear()
+      picker.list.target = nil
+    end
+  end
+
+  local function restart_finder()
+    if current() and picker then
+      picker:find({ refresh = true })
+      refresh()
+    end
+  end
+
   local function fail(message)
     cancel()
     failure, loading = tostring(message), false
     clear()
-    refresh(true)
+    later("refresh", 0, restart_finder)
   end
 
   local function close()
@@ -246,16 +203,81 @@ function M.open(client, buffer, options)
       unwatch()
     end
     vim.api.nvim_del_augroup_by_id(group)
-    clear()
+    -- Snacks exports list items after on_close; let its teardown retain them.
+    clear(true)
   end
 
   local function close_window()
     close()
     vim.schedule(function()
-      if picker and vim.api.nvim_buf_is_valid(picker.prompt_bufnr) then
-        actions.close(picker.prompt_bufnr)
+      if picker and not picker.closed then
+        picker:close()
       end
     end)
+  end
+
+  local function convert(symbol, parent, depth)
+    assert(type(symbol) == "table", "Invalid document symbol")
+    local shape = symbol.location and "flat" or "tree"
+    assert(
+      not representation or representation == shape,
+      "Invalid or mixed document symbol representations"
+    )
+    representation = shape
+    local kind = lsp.symbol_kind(symbol.kind)
+    local location = symbol.location
+      or { uri = source_uri, range = symbol.selectionRange or symbol.range }
+    local range = symbol.location and symbol.location.range or symbol.range
+    assert(type(symbol.name) == "string" and range and location.range, "Invalid document symbol")
+    if type(kinds) == "boolean" or vim.tbl_contains(kinds, kind) then
+      local item = {
+        name = symbol.name,
+        kind = kind,
+        detail = symbol.detail,
+        text = kind .. " " .. symbol.name,
+        range = range,
+        item = symbol,
+        parent = parent,
+        tree = opts.tree,
+        last = true,
+      }
+      lsp.add_loc(item, location, client)
+      item.buf = location.uri == source_uri and buffer or vim.fn.bufnr(item.file)
+      if item.buf == -1 then
+        item.buf = nil
+      end
+      if last[parent] then
+        last[parent].last = nil
+      end
+      last[parent] = item
+      entries[#entries + 1] = item
+      parent = item
+      if
+        cursor_position
+        and location.uri == source_uri
+        and not before(cursor_position, range.start)
+        and before(cursor_position, range["end"])
+      then
+        local previous = cursor_entry and cursor_entry.range
+        if
+          not previous
+          or (
+            not before(range.start, previous.start)
+            and not before(previous["end"], range["end"])
+            and (
+              before(previous.start, range.start)
+              or before(range["end"], previous["end"])
+              or depth > cursor_depth
+            )
+          )
+        then
+          cursor_entry, cursor_depth = item, depth
+        end
+      end
+    end
+    for _, child in ipairs(symbol.children or {}) do
+      convert(child, parent, depth + 1)
+    end
   end
 
   local pump
@@ -267,64 +289,10 @@ function M.open(client, buffer, options)
     while queue_head <= #queue do
       local batch = queue[queue_head]
       while batch.next <= #batch.symbols do
-        local symbol = batch.symbols[batch.next]
-        local shape = type(symbol) == "table" and (symbol.location and "flat" or "tree")
-        if not shape or (representation and representation ~= shape) then
-          fail("Invalid or mixed document symbol representations")
+        local success, err = pcall(convert, batch.symbols[batch.next], root, 0)
+        if not success then
+          fail(err)
           return
-        end
-        representation = shape
-        local success, items =
-          pcall(vim.lsp.util.symbols_to_items, { symbol }, buffer, client.offset_encoding)
-        if not success or #items == 0 then
-          fail(success and "Invalid document symbol" or items)
-          return
-        end
-        local ranges = cursor_position and containing_ranges(symbol, cursor_position, source_uri)
-        for index, item in ipairs(items) do
-          if not allowed or allowed[item.kind:lower()] then
-            local made, entry = pcall(entry_maker, item)
-            if not made then
-              fail(entry)
-              return
-            end
-            if entry then
-              if not opts.entry_maker then
-                local display = entry.display
-                entry.display = function(value)
-                  local width = math.max(vim.o.columns, opts.symbol_width or 25) + 1
-                  if #value.symbol_name > width * 4 then
-                    -- Plenary's truncator copies the remaining string for every character.
-                    local visible = setmetatable({
-                      symbol_name = vim.fn.strcharpart(value.symbol_name, 0, width),
-                    }, { __index = value })
-                    return display(visible)
-                  end
-                  return display(value)
-                end
-              end
-              entries[#entries + 1] = entry
-              local candidate = ranges and ranges[index]
-              if candidate then
-                local range, previous = candidate.range, cursor_range and cursor_range.range
-                if
-                  not previous
-                  or (
-                    not before(range.start, previous.start)
-                    and not before(previous["end"], range["end"])
-                    and (
-                      before(previous.start, range.start)
-                      or before(range["end"], previous["end"])
-                      or candidate.depth > cursor_range.depth
-                    )
-                  )
-                then
-                  cursor_entry, cursor_range = entry, candidate
-                  cursor_anchor = #entries
-                end
-              end
-            end
-          end
         end
         batch.symbols[batch.next] = false
         batch.next = batch.next + 1
@@ -349,10 +317,6 @@ function M.open(client, buffer, options)
       close_window()
       return
     end
-    if client:is_stopped() or not vim.lsp.buf_is_attached(buffer, client.id) then
-      fail("Venue Reader disconnected")
-      return
-    end
     local captured = epoch
     request = Request.start(client, buffer, {
       timeout_ms = timeout,
@@ -367,13 +331,12 @@ function M.open(client, buffer, options)
         end
       end,
       on_progress = function(progress)
-        if not current(captured) then
-          return
+        if current(captured) then
+          if type(progress.percentage) == "number" then
+            percentage = math.max(percentage or 0, math.min(100, math.max(0, progress.percentage)))
+          end
+          refresh()
         end
-        if type(progress.percentage) == "number" then
-          percentage = math.max(percentage or 0, math.min(100, math.max(0, progress.percentage)))
-        end
-        refresh()
       end,
       on_done = function(err)
         if not current(captured) then
@@ -383,72 +346,122 @@ function M.open(client, buffer, options)
         if err then
           fail(type(err) == "table" and err.message or err)
         else
-          if not processing then
-            loading = false
-          end
+          loading = processing
           refresh()
         end
       end,
     })
   end
 
-  opts.get_status_text = function()
-    if loading then
-      return "Loading symbols…" .. (percentage and (" " .. math.floor(percentage) .. "%") or "")
+  opts.finder = function(_, context)
+    local captured = epoch
+    return function(emit)
+      local index = 1
+      while current(captured) and not failure do
+        while index <= #entries and current(captured) do
+          emit(entries[index])
+          index = index + 1
+        end
+        if not loading then
+          return
+        end
+        context.async:suspend()
+      end
     end
-    return failure and ("Failed: " .. failure) or "Request finished"
   end
-  picker = pickers.new(opts, {
-    prompt_title = "Venue Reader Symbols",
-    finder = finder(),
-    previewer = config.qflist_previewer(opts),
-    sorter = config.prefilter_sorter({ tag = "symbol_type", sorter = config.generic_sorter(opts) }),
-    push_cursor_on_edit = true,
-    push_tagstack_on_edit = true,
+  opts.matcher = vim.tbl_extend("force", opts.matcher or {}, {
+    keep_parents = opts.keep_parents,
+    sort = true,
+    sort_empty = opts.keep_parents or (opts.matcher and opts.matcher.sort_empty),
   })
-  local get_selection = picker.get_selection
-  picker.get_selection = function(self)
+  if opts.keep_parents then
+    opts.sort = { fields = { "idx" } }
+  end
+  opts.live, opts.show_empty, opts.auto_confirm = false, true, false
+  opts.find, opts.title = false, "Loading symbols…"
+  opts.limit, opts.limit_live = math.huge, math.huge
+  local on_close = opts.on_close
+  opts.on_close = function(value)
+    close()
+    if on_close then
+      on_close(value)
+    end
+  end
+  for _, existing in ipairs(snacks.picker.get({ source = "lsp_symbols" })) do
+    existing:close()
+  end
+  picker = snacks.picker.lsp_symbols(opts)
+  local get_current, selected = picker.current, picker.selected
+  picker.current = function(self, ...)
     if current() and not failure then
-      return get_selection(self)
+      return get_current(self, ...)
     end
   end
-  local set_selection = picker.set_selection
-  local do_selection = picker._do_selection
-  local automatic_selection = false
-  -- Telescope also calls set_selection when a finder completes; only user calls disarm tracking.
-  picker._do_selection = function(self, prompt)
-    automatic_selection = true
-    local success, err = pcall(do_selection, self, prompt)
-    automatic_selection = false
-    if not success then
-      error(err)
-    end
+  picker.selected = function(self, ...)
+    return valid_source() and not failure and selected(self, ...) or {}
   end
-  for _, method in ipairs({ "set_selection", "add_selection", "remove_selection" }) do
-    local original = picker[method]
-    picker[method] = function(self, ...)
-      if not automatic_selection then
+  local query_pattern = picker.input.filter.pattern
+  local query_pending = query_pattern ~= ""
+  for _, method in ipairs({ "move", "select" }) do
+    local original = picker.list[method]
+    picker.list[method] = function(self, ...)
+      -- List rendering calls move(0) to clamp its cursor.
+      if method ~= "move" or select(1, ...) ~= 0 then
+        query_pattern, query_pending = picker.input.filter.pattern, false
         stop_cursor_selection()
       end
       return original(self, ...)
     end
   end
-  picker:register_completion_callback(function(self)
-    if cursor_position and current() and self:_get_prompt() == "" and cursor_entry then
-      local index = self.manager:find_entry(cursor_entry)
-      if index and self:get_selection() ~= cursor_entry then
-        set_selection(self, self:get_row(index))
+  local match_done = picker.matcher.on_done
+  picker.matcher.on_done = function(self, value)
+    local selection = cursor_entry or picker:current({ resolve = false })
+    local pattern, captured = picker.input.filter.pattern, epoch
+    match_done(self, value)
+    -- The stock symbol matcher moves to the first match at completion.
+    vim.schedule(function()
+      if current(captured) and picker.input.filter.pattern == pattern and selection then
+        for index = 1, picker.list:count() do
+          if picker.list:get(index) == selection then
+            picker.list:view(index)
+            break
+          end
+        end
+      end
+    end)
+  end
+  local update = picker.list.update
+  picker.list.update = function(self, ...)
+    local pattern = picker.input.filter.pattern
+    if pattern ~= query_pattern then
+      query_pattern, query_pending = pattern, pattern ~= ""
+    end
+    if query_pending then
+      for index = 1, self:count() do
+        local item = self:get(index)
+        if item.match_tick == picker.matcher.tick and not item.child_match_only then
+          self:view(index, nil, false)
+          query_pending = false
+          break
+        end
       end
     end
-  end)
-  picker:find()
-  if picker:_get_prompt() ~= "" then
+    if cursor_entry and current() and picker.input.filter.pattern == "" then
+      for index = 1, self:count() do
+        if self:get(index) == cursor_entry then
+          self:view(index, nil, false)
+          break
+        end
+      end
+    end
+    return update(self, ...)
+  end
+  if picker.input.filter.pattern ~= "" then
     stop_cursor_selection()
   end
-  vim.api.nvim_buf_attach(picker.prompt_bufnr, false, {
-    on_lines = function()
-      stop_cursor_selection()
-    end,
+  picker:show()
+  vim.api.nvim_buf_attach(picker.input.win.buf, false, {
+    on_lines = stop_cursor_selection,
   })
   unwatch = watch(buffer, function(event)
     if event == "detached" then
@@ -460,15 +473,10 @@ function M.open(client, buffer, options)
     clear()
     changedtick = vim.api.nvim_buf_get_changedtick(buffer)
     failure, percentage, representation = nil, nil, nil
-    loading, responded, refreshes, displayed = true, false, 0, false
-    refresh(true)
+    loading, responded = true, false
+    later("refresh", 0, restart_finder)
     later("restart", 150, start)
   end)
-  vim.api.nvim_create_autocmd("BufWipeout", {
-    group = group,
-    buffer = picker.prompt_bufnr,
-    callback = close,
-  })
   vim.api.nvim_create_autocmd({ "BufWipeout", "BufFilePre" }, {
     group = group,
     buffer = buffer,
@@ -483,6 +491,8 @@ function M.open(client, buffer, options)
       end
     end,
   })
+  picker:find()
+  picker:show()
   start()
   return picker
 end

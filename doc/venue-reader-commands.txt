@@ -17,7 +17,7 @@ Wiki: https://github.com/sergluka/venue-reader.nvim/wiki/Commands
 :VenueReader dictionary [name]  Choose or select a server dictionary.
 :VenueReader settings           Preview committed settings/sources/warnings.
 :VenueReader tag {number} [val] Preview a tag/value reference.
-:VenueReader symbols            Search arriving document symbols with Telescope.
+:VenueReader symbols            Search arriving document symbols with Snacks.
 :checkhealth venue-reader       Inspect requirements/current global state.
 
 Only yank accepts an Ex range. Tag numbers are positive decimal u32 integers;
@@ -89,7 +89,7 @@ operator()                     Expression mapping for decoded g@ operator.
 dictionary([name])             Choose or select the dictionary.
 settings()                     Preview current committed settings.
 tag(number[, value])           Preview tag/value reference.
-symbols([opts])                Open the progressive Telescope symbol picker.
+symbols([opts])                Open the progressive Snacks symbol picker.
 textobject(kind)               Select tag/value/field/message/comment via syntax.
 
 Examples: >lua
@@ -104,10 +104,13 @@ textobject() needs the optional engine in |venue-reader-textobjects|.
 ==============================================================================
 Document symbols                                       *venue-reader-symbols*
 
-Install telescope.nvim and plenary.nvim, then open a named FIX buffer with an
-attached Venue Reader client and run :VenueReader symbols. Missing Telescope
+The picker is optional. Set symbols.enabled = false in setup to disable it
+and hide symbols from command completion. Native LSP symbols do not depend on it.
+
+Install snacks.nvim, then open a named FIX buffer with an attached Venue Reader
+client and run :VenueReader symbols. Missing Snacks
 reports an installation error; it does not silently open another interface.
-Native vim.lsp.buf.document_symbol() and :Telescope lsp_document_symbols remain
+Native vim.lsp.buf.document_symbol() and Snacks.picker.lsp_symbols() remain
 independent commands.
 
 The picker opens immediately. Search and select received symbols while
@@ -126,18 +129,23 @@ locations immediately and restart after 150 ms without another edit, preserving
 the query. Continuous file reloads can postpone useful results. Errors and
 disconnects clear partial results. Closed pickers are not cached for resume.
 
-Lua accepts Telescope options and these adapter options: >lua
+Lua accepts Snacks picker options and these adapter options: >lua
     require("venue-reader").symbols({
       bufnr = vim.api.nvim_get_current_buf(),
       timeout_ms = 30000,
-      symbols = { "Object", "Field", "Array" },
-      previewer = false,
+      tree = true,
+      keep_parents = true,
+      filter = { fix = { "Object", "Field", "Array" } },
     })
 <
-All symbol kinds are included by default. symbols can be a kind name or a list;
-the same filter applies to the marker. The picker respects configured sorter
-case rules. timeout_ms overrides |venue-reader-options| for this invocation.
-The function returns the Telescope picker. No user mapping is installed.
+All FIX symbol kinds are included by default with filter = { fix = true }.
+Use filter = { fix = { "Object", "Field", "Array" } } to select kind names;
+the same filter applies to the marker. tree = true and keep_parents = true
+are defaults: matching descendants retain their ancestors in the tree.
+The picker uses Snacks matching rules. timeout_ms overrides
+|venue-reader-options| for this invocation and keeps its inactivity semantics.
+The function returns the Snacks picker. No user mapping is installed.
+Telescope options and the former symbols kind filter are not supported.
 
 Incoming queues have no capacity limit. Large roots are converted intact and
 can pause the UI; slow consumers may accumulate memory. Streaming improves
@@ -212,6 +220,17 @@ For example: >lua
     vim.keymap.set({ "x", "o" }, "if", "<Plug>(VenueReaderField)")
     vim.keymap.set({ "x", "o" }, "iv", "<Plug>(VenueReaderValue)")
 <
+With Snacks installed and the symbol picker enabled, this optional mapping
+opens the symbol tree only in FIX buffers:
+>lua
+    -- ~/.config/nvim/ftplugin/fix.lua
+    vim.keymap.set("n", "<localleader><localleader>", "<cmd>VenueReader symbols<cr>", {
+      buffer = true,
+      desc = "Venue Reader symbols",
+    })
+<
+<localleader> uses g:maplocalleader; if it is a comma, press ,,
+
 Syntax selections need nvim-treesitter-textobjects main. Its selection-mode,
 lookahead and whitespace settings apply. The adapter's enabled predicate and
 buffer opt-out guard selection. See |venue-reader-textobjects| and

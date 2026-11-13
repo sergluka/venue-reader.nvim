@@ -48,18 +48,30 @@ archive for offline fixtures.
 ==============================================================================
 Interactive worktrees                               *venue-reader-dev-launcher*
 
-From the plugin checkout you want to load:
+No particular directory layout is required. Keep your plugin and server
+checkouts wherever you prefer. From the plugin checkout you want to load, pass
+the server source directory explicitly:
+>sh
+    make dev SERVER_DIR=/absolute/path/to/server-checkout
+<
+For supported layouts, the launcher can also find the server automatically:
 >sh
     make dev
 <
-Git selects the server worktree with the same branch name as this plugin
-checkout. The primary server repository, venue-reader, must be next to the
-primary plugin checkout; worktrees themselves can live elsewhere. Detection
-uses Git metadata, not worktree directory names. Detached HEAD, no matching
-server branch, or multiple matches require an explicit override:
->sh
-    make dev SERVER_DIR=/absolute/path/to/server-worktree
-<
+It looks for a venue-reader checkout next to the plugin checkout, then next to
+the plugin's primary checkout. Branch names do not need to match, and detached
+HEAD is supported.
+
+The maintainer's personal repos/ and workspaces/<task>/ layout has an additional
+lookup rule: use the feature's server when present, otherwise repos/venue-reader.
+The current directory selects the feature when inside workspaces/<task>/;
+otherwise the plugin checkout selects it. This layout is optional, not a project
+convention that other contributors must adopt. SERVER_DIR always takes precedence.
+
+A selected path that exists but has no readable Cargo.toml fails without falling
+back. The launcher prints the source and executable paths used for the session.
+The selected checkout's current contents are used, including local edits.
+
 This builds the selected server in Cargo's dev profile, then loads the plugin
 from this checkout through your normal Neovim configuration. The
 launcher reads the executable path from Cargo's compiler-artifact JSON, so a
@@ -73,12 +85,14 @@ log, or pass files normally with the direct command:
 >sh
     nvim -u /absolute/path/to/plugin-worktree/scripts/dev.lua log.fix
 <
-Use matching branch names for future paired feature worktrees, or SERVER_DIR
-for a different pairing. The direct command accepts the same override through
+The direct command accepts an explicit server path through
 VENUE_READER_DEV_SERVER_DIR. Release pins need no changes.
 The server must be compatible with the plugin checkout. Ordinary server project/modeline settings
 still apply to opened files. Restart the development Neovim to rebuild/reload
 after source changes. make dev NVIM=/path/to/nvim selects another executable.
+
+Run make test-dev to check launcher selection with temporary Git worktrees,
+Neovim and a stub Cargo command. These tests need Python 3 and do not build Rust.
 
 Development overrides in your config ~
 

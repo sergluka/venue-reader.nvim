@@ -26,7 +26,7 @@ local command_clients = {}
 local defaults = {
   server = { auto_install = true },
   commands = { timeout_ms = 5000 },
-  symbols = { timeout_ms = 30000 },
+  symbols = { enabled = true, timeout_ms = 30000 },
   treesitter = { enabled = true, auto_install = true },
   summary = { mode = "front", semantic_highlighting = true },
 }
@@ -183,6 +183,7 @@ function M.status(buffer)
       version = client.server_info and client.server_info.version,
       buffers = vim.tbl_keys(client.attached_buffers),
     },
+    symbols = { enabled = not options or options.symbols.enabled },
     acquisition = Native.acquisition(),
     annotations = Summaries.status(buffer, client and client.id),
     treesitter = Treesitter.status(buffer),
@@ -230,6 +231,10 @@ function M.yank(value)
 end
 
 function M.symbols(value)
+  assert(
+    not options or options.symbols.enabled,
+    "Symbol picker is disabled (symbols.enabled = false)"
+  )
   local opts = vim.tbl_extend("force", {}, options and options.symbols or {}, value or {})
   local buffer = opts.bufnr or vim.api.nvim_get_current_buf()
   local client = selected_client(buffer)
@@ -267,6 +272,7 @@ function M.setup(value)
   assert(value.settings == nil, "Use vim.lsp.config('venue_reader', { settings = ... })")
   local candidate = vim.tbl_deep_extend("force", vim.deepcopy(defaults), value)
   assert(type(candidate.symbols) == "table", "symbols must be a table")
+  assert(type(candidate.symbols.enabled) == "boolean", "symbols.enabled must be boolean")
   local symbol_timeout = candidate.symbols.timeout_ms
   assert(
     type(symbol_timeout) == "number"
@@ -411,7 +417,9 @@ function M.setup(value)
         M[action]()
       else
         error(
-          "Use start, stop, restart, status, summary, symbols, yank, dictionary, settings, tag"
+          "Use start, stop, restart, status, summary"
+            .. (options.symbols.enabled and ", symbols" or "")
+            .. ", yank, dictionary, settings, tag"
             .. " or install server|grammar"
         )
       end
@@ -424,7 +432,7 @@ function M.setup(value)
     range = true,
     force = true,
     complete = function()
-      return {
+      local commands = {
         "start",
         "stop",
         "restart",
@@ -439,9 +447,12 @@ function M.setup(value)
         "yank",
         "dictionary",
         "settings",
-        "symbols",
         "tag",
       }
+      if options.symbols.enabled then
+        commands[#commands + 1] = "symbols"
+      end
+      return commands
     end,
   })
   vim.lsp.enable("venue_reader")

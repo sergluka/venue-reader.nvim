@@ -164,13 +164,13 @@ tests["symbol picker selects the source field from real server ranges"] = functi
   for _, column in ipairs({ field_start - 1, field_start + 5 }) do
     vim.api.nvim_win_set_cursor(0, { 300, column })
     vim.cmd("VenueReader symbols")
-    picker = require("telescope.actions.state").get_current_picker(vim.api.nvim_get_current_buf())
+    picker = require("snacks").picker.get()[1]
     Lsp.wait(function()
-      local entry = picker:get_selection()
-      return entry and entry.lnum == 300 and entry.col == field_start
+      local entry = picker:current()
+      return entry and entry.pos[1] == 300 and entry.pos[2] == field_start - 1
     end, "real source field selected beyond the first result window")
-    equal(picker:get_selection().symbol_type, "Field")
-    assert(picker:get_selection().symbol_name:find("SYNTHETIC", 1, true))
+    equal(picker:current().kind, "Field")
+    assert(picker:current().name:find("SYNTHETIC", 1, true))
     Symbols.close(picker)
     picker = nil
     equal(vim.api.nvim_get_current_buf(), buffer)

@@ -8,45 +8,39 @@ end
 local function git(arguments)
   local result = vim.system(vim.list_extend({ "git" }, arguments), { text = true }):wait()
   if result.code ~= 0 then
-    fail("cannot detect paired worktree; set SERVER_DIR explicitly. " .. (result.stderr or ""))
+    fail("cannot detect main checkout; set SERVER_DIR explicitly. " .. (result.stderr or ""))
   end
   return result.stdout
 end
 
-local function paired_server()
+local function selected_server()
   if vim.fn.executable("git") ~= 1 then
-    fail("Git is required for worktree detection; set SERVER_DIR explicitly")
+    fail("Git is required for checkout detection; set SERVER_DIR explicitly")
   end
-  local branch = vim.trim(git({ "-C", root, "symbolic-ref", "--quiet", "HEAD" }))
   local common =
     vim.trim(git({ "-C", root, "rev-parse", "--path-format=absolute", "--git-common-dir" }))
-  local server = vim.fs.dirname(vim.fs.dirname(common)) .. "/venue-reader"
-  local worktrees = git({ "-C", server, "worktree", "list", "--porcelain", "-z" })
-  local directory
-  local matches = {}
-  for field in worktrees:gmatch("[^%z]+") do
-    if field:sub(1, 9) == "worktree " then
-      directory = field:sub(10)
-    elseif
-      field == "branch " .. branch and vim.fn.filereadable(directory .. "/Cargo.toml") == 1
-    then
-      matches[#matches + 1] = directory
+  local repositories = vim.fs.dirname(vim.fs.dirname(common))
+  local workspaces = vim.fs.dirname(repositories) .. "/workspaces"
+  local parent = vim.fs.dirname(root)
+  if vim.fs.basename(repositories) == "repos" and vim.fn.isdirectory(workspaces) == 1 then
+    local function feature(directory)
+      local relative = directory:sub(#workspaces + 2)
+      if directory:sub(1, #workspaces + 1) == workspaces .. "/" and relative ~= "" then
+        return workspaces .. "/" .. relative:match("^[^/]+")
+      end
     end
+    parent = feature(vim.fn.getcwd()) or feature(root) or repositories
   end
-  if #matches ~= 1 then
-    fail(
-      ("expected one server worktree on %s, found %d; set SERVER_DIR explicitly"):format(
-        branch,
-        #matches
-      )
-    )
+  local candidate = parent .. "/venue-reader"
+  if vim.uv.fs_lstat(candidate) then
+    return candidate
   end
-  return matches[1]
+  return repositories .. "/venue-reader"
 end
 
 local directory = vim.env.VENUE_READER_DEV_SERVER_DIR
 if not directory or directory == "" then
-  directory = paired_server()
+  directory = selected_server()
 end
 directory = vim.fs.normalize(vim.fn.fnamemodify(directory, ":p"))
 local manifest = directory .. "/Cargo.toml"

@@ -11,18 +11,7 @@ function Symbols.symbol(name, line, kind)
 end
 
 function Symbols.status(picker)
-  if not vim.api.nvim_buf_is_valid(picker.prompt_bufnr) then
-    return ""
-  end
-  local messages = {}
-  for _, marker in
-    ipairs(vim.api.nvim_buf_get_extmarks(picker.prompt_bufnr, -1, 0, -1, { details = true }))
-  do
-    for _, text in ipairs(marker[4].virt_text or {}) do
-      messages[#messages + 1] = text[1]
-    end
-  end
-  return table.concat(messages, " ")
+  return picker.title or ""
 end
 
 function Symbols.has_status(picker, value)
@@ -30,25 +19,21 @@ function Symbols.has_status(picker, value)
 end
 
 function Symbols.results(picker)
-  return picker.manager and picker.manager:num_results() or 0
+  return picker.list:count()
 end
 
 function Symbols.query(picker, query, expected)
-  local scans = 0
-  picker:register_completion_callback(function()
-    scans = scans + 1
-  end)
-  picker:set_prompt(query, true)
+  picker.input:set(query)
+  -- Headless waits do not emit the TextChanged event that starts Snacks matching.
+  vim.api.nvim_exec_autocmds("TextChanged", { buffer = picker.input.win.buf })
   Lsp.wait(function()
-    return scans > 0 and Symbols.results(picker) == expected
+    return picker.matcher.pattern == query and Symbols.results(picker) == expected
   end, "query " .. query)
 end
 
 function Symbols.close(picker)
-  if vim.api.nvim_buf_is_valid(picker.prompt_bufnr) then
-    -- Headless Lua waits do not consume Telescope's queued insert-mode keys.
-    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "nx", false)
-    require("telescope.actions").close(picker.prompt_bufnr)
+  if not picker.closed then
+    picker:close()
   end
 end
 
@@ -98,9 +83,9 @@ function Symbols.fixture(options)
       client,
       buffer,
       vim.tbl_extend("force", {
-        previewer = false,
+        layout = { preset = "default", preview = false, reverse = false },
+        focus = "input",
         timeout_ms = 5000,
-        sorting_strategy = "ascending",
       }, options, overrides or {})
     )
     assert(picker, "picker opened")
@@ -116,7 +101,7 @@ function Symbols.fixture(options)
     self:control("chunk", { request = request.id, symbols = values })
     if picker then
       Lsp.wait(function()
-        return Symbols.results(picker) == count and (count == 0 or picker:get_selection() ~= nil)
+        return Symbols.results(picker) == count and (count == 0 or picker:current() ~= nil)
       end, "incremental symbol results")
     end
   end

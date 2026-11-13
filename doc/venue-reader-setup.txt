@@ -17,6 +17,7 @@ Create lua/plugins/venue-reader.lua in your Neovim configuration directory:
       {
         "sergluka/venue-reader.nvim",
         dependencies = { -- optional
+          { "folke/snacks.nvim", opts = { picker = { enabled = true } } },
           { "nvim-treesitter/nvim-treesitter", branch = "main" },
           { "nvim-treesitter/nvim-treesitter-textobjects", branch = "main" },
         },
@@ -28,13 +29,14 @@ Create lua/plugins/venue-reader.lua in your Neovim configuration directory:
       },
     }
 <
-The config function registers native settings before setup. The dependencies
-use Tree-sitter main APIs; ensure your LazyVim configuration uses those APIs.
+The config function registers native settings before setup. The Tree-sitter
+dependencies use main APIs; ensure your LazyVim configuration uses those APIs.
 The inner spec also works in a standalone lazy.nvim configuration. The manager
 is only needed for parser installation; textobjects is only needed for syntax
 selection/navigation. No other Neovim plugin is required for LSP features.
-The progressive |venue-reader-symbols| picker additionally needs telescope.nvim
-and plenary.nvim; native document-symbol commands do not.
+The progressive |venue-reader-symbols| picker needs snacks.nvim; native
+document-symbol commands do not. Remove optional dependencies you do not need.
+To disable the picker command, set opts.symbols.enabled = false.
 
 ==============================================================================
 Native packages                                     *venue-reader-pack*
@@ -64,7 +66,7 @@ Defaults: >lua
       server = { auto_install = true },
       summary = { mode = "front", semantic_highlighting = true },
       commands = { timeout_ms = 5000 },
-      symbols = { timeout_ms = 30000 },
+      symbols = { enabled = true, timeout_ms = 30000 },
       treesitter = { enabled = true, auto_install = true },
     })
 <
@@ -102,6 +104,11 @@ is created and covers root resolution, discovery/installation, bootstrap and
 requests. Time spent choosing a dictionary is excluded. Timeouts cancel native
 outstanding requests; late root resolution cannot start a client solely for an
 expired command, and late answers do not write registers or previews.
+
+symbols.enabled ~
+Boolean; default true. Set false to disable the optional Snacks symbol picker
+and hide symbols from :VenueReader completion. Setup and native LSP features
+do not load or require Snacks. Calling a disabled picker reports an error.
 
 symbols.timeout_ms ~
 Finite non-negative integer; default 30000. Cancel document symbols after this

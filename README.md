@@ -7,8 +7,8 @@ without this plugin.
 The plugin reuses or installs the server, renders message summaries and adds
 decoded yank and dictionary helpers. Hover, diagnostics, code actions, document
 symbols, field hints and semantic highlighting use Neovim's native LSP support.
-With optional Telescope, `:VenueReader symbols` also searches arriving document
-symbols and allows navigation before the request finishes.
+With optional Snacks, browse and search FIX messages, groups, and fields in a
+tree, even while the list is still loading.
 Optional Tree-sitter adds base highlighting, SOH conceal and structural selection
 and navigation. It is not required for LSP features.
 
@@ -30,6 +30,7 @@ return {
   {
     "sergluka/venue-reader.nvim",
     dependencies = { -- optional
+      { "folke/snacks.nvim", opts = { picker = { enabled = true } } },
       { "nvim-treesitter/nvim-treesitter", branch = "main" },
       { "nvim-treesitter/nvim-treesitter-textobjects", branch = "main" },
     },
@@ -42,9 +43,12 @@ return {
 }
 ```
 
-The optional dependencies use Tree-sitter `main` APIs; ensure your LazyVim
+The optional Tree-sitter dependencies use `main` APIs; ensure your LazyVim
 configuration uses those APIs. The inner spec also works with standalone
 lazy.nvim. Remove `dependencies` if you do not need them.
+
+To disable the picker command, set `opts = { symbols = { enabled = false } }`.
+All native LSP features, including document symbols, work without Snacks.
 
 ### Native Neovim package manager
 
@@ -136,16 +140,32 @@ Use native LSP interfaces, for example `:lua vim.lsp.buf.hover()` and
 | `:VenueReader dictionary` | Choose a server dictionary with `vim.ui.select` |
 | `:VenueReader settings` | Preview effective settings, sources and warnings |
 | `:VenueReader tag 54 1` | Look up `Side(54) = 1` |
-| `:VenueReader symbols` | Search and select arriving document symbols with Telescope |
+| `:VenueReader symbols` | Search and select arriving document symbols with Snacks |
 
-The symbol picker requires `nvim-telescope/telescope.nvim` and
-`nvim-lua/plenary.nvim`. It shows `Loading symbols…` while receiving results,
-with a percentage when the server supplies one. Search applies to received
+The optional symbol picker requires `folke/snacks.nvim`. It shows `Loading symbols…`
+while receiving results, with a percentage when the server supplies one. Search applies to received
 symbols; the server's depth and item limits still apply. A truncation marker is
 filtered like any other entry. Closing or selecting cancels remaining work;
 editing the source clears old locations and restarts after a short pause.
-Native `vim.lsp.buf.document_symbol()` and Telescope's stock command remain
-available independently. See `:help venue-reader-symbols` for options.
+Native `vim.lsp.buf.document_symbol()` and `Snacks.picker.lsp_symbols()` remain
+available independently. `require("venue-reader").symbols()` returns a Snacks
+picker and defaults to `tree = true`, `keep_parents = true`, and all FIX symbol
+kinds (`filter = { fix = true }`).
+Use `filter = { fix = { "Object", "Field", "Array" } }` to select kinds.
+See `:help venue-reader-symbols` for options.
+
+With Snacks installed and the picker enabled, this optional FIX-buffer mapping
+opens the symbol tree:
+
+```lua
+-- ~/.config/nvim/ftplugin/fix.lua
+vim.keymap.set("n", "<localleader><localleader>", "<cmd>VenueReader symbols<cr>", {
+  buffer = true,
+  desc = "Venue Reader symbols",
+})
+```
+
+`<localleader>` uses `vim.g.maplocalleader` (for example, `,,` when it is `,`).
 
 Decode the field under the cursor with `:VenueReader yank`, or lines with
 `:10,20VenueReader yank a`, then paste normally with `p`/`P`. For a decoded
@@ -223,5 +243,6 @@ Development commands and platform acceptance status are in
 [Contributing](https://github.com/sergluka/venue-reader.nvim/wiki/Contributing),
 `:help venue-reader-development` and [tests/ACCEPTANCE.md](tests/ACCEPTANCE.md).
 
-For paired source worktrees, run `make dev` from the plugin checkout; the server
-worktree is selected by matching Git branch names. See `:help venue-reader-dev-launcher`.
+From the plugin checkout, run `make dev SERVER_DIR=/path/to/server-checkout`.
+Any directory layout is supported with an explicit server path; plain `make dev`
+can detect supported layouts automatically. See `:help venue-reader-dev-launcher`.

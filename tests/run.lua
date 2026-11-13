@@ -1,8 +1,11 @@
 local root = assert(vim.env.VENUE_READER_TEST_ROOT)
 vim.opt.runtimepath:prepend(root)
 vim.opt.runtimepath:prepend(root .. "/.test-deps/mini.test")
-vim.opt.runtimepath:prepend(root .. "/.test-deps/plenary.nvim")
-vim.opt.runtimepath:prepend(root .. "/.test-deps/telescope.nvim")
+vim.opt.runtimepath:prepend(root .. "/.test-deps/snacks.nvim")
+local snacks = require("snacks")
+snacks.setup({ picker = { enabled = true, ui_select = false } })
+-- Headless script execution does not emit UIEnter.
+snacks.picker.setup()
 package.path = root .. "/?.lua;" .. root .. "/?/init.lua;" .. package.path
 vim.lsp.log.set_level("ERROR")
 vim.api.nvim_set_option_value("more", false, {})

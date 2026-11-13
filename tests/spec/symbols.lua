@@ -40,14 +40,13 @@ end
 
 local function wait_selected(picker, name)
   Lsp.wait(function()
-    local entry = picker:get_selection()
-    return entry and entry.symbol_name == name
+    local entry = picker:current()
+    return entry and entry.name == name
   end, "selected source symbol " .. name)
 end
 
-local function accept_selection()
-  -- Consume Telescope's queued insert-mode entry and mapped acceptance together.
-  vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<CR>", true, false, true), "mx", false)
+local function accept_selection(picker)
+  picker:action("confirm")
 end
 
 local function field_tree()
@@ -68,7 +67,7 @@ tests["source tag and value positions select the innermost field before completi
     fixture:chunk(request, { field_tree() }, picker, 5)
     wait_selected(picker, "Symbol")
     assert(Symbols.has_status(picker, "Loading symbols"))
-    accept_selection()
+    accept_selection(picker)
     equal(vim.api.nvim_get_current_buf(), fixture.buffer)
     equal(vim.api.nvim_win_get_cursor(0), { 1, 5 })
     assert(fixture:cancelled(request))
@@ -88,11 +87,12 @@ tests["late source match replaces the containing parent while streaming"] = func
   wait_selected(picker, "Symbol")
 end
 
-tests["late source targets beyond the visible list work in either sorting direction"] = function()
+tests["late source targets beyond the visible list work in either layout direction"] = function()
   local fixture = Symbols.fixture()
-  for _, strategy in ipairs({ "ascending", "descending" }) do
+  for _, reverse in ipairs({ false, true }) do
     field_source(fixture, 1051, string.rep("aa|", 400))
-    local picker, request = fixture:open({ sorting_strategy = strategy })
+    local picker, request =
+      fixture:open({ layout = { preset = "default", preview = false, reverse = reverse } })
     local first, last = {}, {}
     for index = 0, 399 do
       local entry = ranged_symbol(
@@ -104,11 +104,11 @@ tests["late source targets beyond the visible list work in either sorting direct
       batch[#batch + 1] = entry
     end
     fixture:chunk(request, first, picker, 300)
-    assert(picker.max_results < 350, "source target must be outside the initial visible rows")
+    assert(picker.list:height() < 350, "source target must be outside the initial visible rows")
     fixture:chunk(request, last, picker, 400)
     wait_selected(picker, "CursorTarget")
     assert(Symbols.has_status(picker, "Loading symbols"))
-    accept_selection()
+    accept_selection(picker)
     equal(vim.api.nvim_get_current_buf(), fixture.buffer)
     equal(vim.api.nvim_win_get_cursor(0), { 1, 1050 })
   end
@@ -126,7 +126,7 @@ end
 tests["filtered source fields fall back to their available containing group"] = function()
   local fixture = Symbols.fixture()
   field_source(fixture, 8)
-  local picker, request = fixture:open({ symbols = { "Object", "Array" } })
+  local picker, request = fixture:open({ filter = { fix = { "Object", "Array" } } })
   fixture:chunk(request, { field_tree() }, picker, 2)
   wait_selected(picker, "Group")
 end
@@ -143,13 +143,13 @@ tests["manual selection is preserved when the source match arrives later"] = fun
   local fixture = Symbols.fixture()
   for _, navigate in ipairs({
     function(picker)
-      picker:set_selection(picker:get_row(2))
+      picker.list:move(2, true)
     end,
     function(picker)
-      require("telescope.actions").move_selection_next(picker.prompt_bufnr)
+      picker:action("list_down")
     end,
     function(picker)
-      require("telescope.actions").move_selection_previous(picker.prompt_bufnr)
+      picker:action("list_bottom")
     end,
   }) do
     field_source(fixture, 8)
@@ -170,7 +170,7 @@ tests["selection before any results prevents late automatic cursor matching"] = 
   local fixture = Symbols.fixture()
   field_source(fixture, 8)
   local picker, request = fixture:open()
-  picker:set_selection(0)
+  picker.list:move(1, true)
   fixture:chunk(request, {
     ranged_symbol("First", 0, 2),
     ranged_symbol("Symbol", 5, 11),
@@ -188,16 +188,16 @@ tests["search then clearing the query does not reenable cursor matching"] = func
   }, picker, 2)
   Symbols.query(picker, "second", 1)
   Symbols.query(picker, "", 2)
-  local selection = picker:get_selection()
+  local selection = picker:current()
   fixture:chunk(request, { ranged_symbol("Symbol", 5, 11) }, picker, 3)
-  equal(picker:get_selection(), selection)
+  equal(picker:current(), selection)
 end
 
 tests["initial search takes precedence over the source cursor"] = function()
   local fixture = Symbols.fixture()
   field_source(fixture, 8)
-  local picker, request = fixture:open({ default_text = "side" })
-  fixture:chunk(request, { field_tree() }, picker, 1)
+  local picker, request = fixture:open({ pattern = "side" })
+  fixture:chunk(request, { field_tree() }, picker, 3)
   wait_selected(picker, "Side")
 end
 
@@ -228,7 +228,7 @@ tests["UTF-16 symbol ranges match UTF-8 source cursor bytes"] = function()
     ranged_symbol("Message", 0, 11, 19, { ranged_symbol("Symbol", 4, 10) }),
   }, picker, 2)
   wait_selected(picker, "Symbol")
-  accept_selection()
+  accept_selection(picker)
   equal(vim.api.nvim_win_get_cursor(0), { 1, 7 })
 end
 
@@ -238,7 +238,7 @@ tests["chunks are selectable and searchable before final response"] = function()
   equal(request.params.textDocument.uri, vim.uri_from_bufnr(fixture.buffer))
   assert(request.params.partialResultToken ~= request.params.workDoneToken)
   fixture:chunk(request, { symbol("Alpha"), symbol("Beta", 1) }, picker, 2)
-  assert(picker:get_selection())
+  assert(picker:current())
   vim.wait(1050, function()
     return false
   end)
@@ -246,7 +246,7 @@ tests["chunks are selectable and searchable before final response"] = function()
   Symbols.query(picker, "later", 0)
   assert(Symbols.has_status(picker, "Loading symbols"))
   fixture:chunk(request, { symbol("Later", 2) }, picker, 1)
-  assert(picker:get_selection().ordinal:find("Later", 1, true))
+  assert(picker:current().text:find("Later", 1, true))
   equal(#fixture:state().requests, 1)
   fixture:control("final", { request = request.id })
   finished(picker)
@@ -258,17 +258,37 @@ tests["selection identity survives another chunk and query is preserved"] = func
   local picker, request = fixture:open()
   fixture:chunk(request, { symbol("MatchFirst"), symbol("MatchSecond", 1) }, picker, 2)
   Symbols.query(picker, "match", 2)
-  picker:set_selection(1)
-  local selected = picker:get_selection()
+  picker.list:move(2, true)
+  local selected = picker:current()
   assert(selected)
   fixture:chunk(request, { symbol("MatchThird", 2) }, picker, 3)
-  equal(picker:get_selection(), selected)
-  equal(picker:_get_prompt(), "match")
+  equal(picker:current(), selected)
+  equal(picker.input:get(), "match")
+end
+
+tests["manual selection survives final completion and remains navigable"] = function()
+  local fixture = Symbols.fixture()
+  local picker, request = fixture:open()
+  fixture:chunk(request, { symbol("First"), symbol("Second", 1), symbol("Third", 2) }, picker, 3)
+  picker.list:move(2, true)
+  wait_selected(picker, "Second")
+  local selected = picker:current()
+  fixture:control("final", { request = request.id })
+  finished(picker)
+  Lsp.wait(function()
+    return not picker:is_active()
+  end, "finder and matcher completed")
+  vim.wait(50, function()
+    return false
+  end)
+  equal(picker:current(), selected)
+  picker:action("list_down")
+  wait_selected(picker, "Third")
 end
 
 tests["marker is an ordinary record under text and kind filters"] = function()
   local fixture = Symbols.fixture()
-  local picker, request = fixture:open({ symbols = { "Function" } })
+  local picker, request = fixture:open({ filter = { fix = { "Function" } } })
   fixture:chunk(request, {
     symbol("Alpha"),
     symbol("… Some fields/groups omitted", 0, 15),
@@ -313,13 +333,71 @@ tests["early selection navigates then cancels the unfinished request"] = functio
   local fixture = Symbols.fixture()
   local picker, request = fixture:open()
   fixture:chunk(request, { symbol("Second", 1) }, picker, 1)
-  require("telescope.actions").select_default(picker.prompt_bufnr)
+  picker:action("confirm")
   Lsp.wait(function()
     return fixture:cancelled(request)
   end, "selection cancellation")
   equal(vim.api.nvim_get_current_buf(), fixture.buffer)
   equal(vim.api.nvim_win_get_cursor(0)[1], 2)
   equal(fixture.client.handlers["$/progress"], fixture.original_handler)
+end
+
+tests["list actions export selected or filtered symbols after closing"] = function()
+  for _, action in ipairs({ "qflist", "qflist_all", "loclist" }) do
+    for _, complete in ipairs({ false, true }) do
+      for _, select_item in ipairs({ false, true }) do
+        local fixture = Symbols.fixture()
+        local picker, request = fixture:open()
+        fixture:chunk(request, {
+          symbol("Alpha", 0),
+          symbol("Beta", 1),
+          symbol("Gamma", 2),
+        }, picker, 3)
+        if complete then
+          fixture:control("final", { request = request.id })
+          finished(picker)
+        end
+        if select_item then
+          picker.list:select(picker.list:get(2))
+          picker.list:select(picker.list:get(3))
+        else
+          Symbols.query(picker, "Beta", 1)
+        end
+        local source_window = picker.main
+        MiniTest.finally(function()
+          vim.cmd("silent! cclose")
+          if vim.api.nvim_win_is_valid(source_window) then
+            vim.api.nvim_win_call(source_window, function()
+              vim.cmd("silent! lclose")
+            end)
+          end
+        end)
+        picker:action(action)
+        assert(picker.closed)
+        local items = action == "loclist" and vim.fn.getloclist(source_window) or vim.fn.getqflist()
+        local expected = action == "qflist_all" and select_item and { "Alpha", "Beta", "Gamma" }
+          or select_item and { "Beta", "Gamma" }
+          or { "Beta" }
+        equal(
+          vim.tbl_map(function(item)
+            return item.text
+          end, items),
+          expected
+        )
+        for index, item in ipairs(items) do
+          equal(item.bufnr, fixture.buffer)
+          equal(item.lnum, #expected == 3 and index or index + 1)
+          equal(item.col, 1)
+        end
+        if not complete then
+          Lsp.wait(function()
+            return fixture:cancelled(request)
+          end, "list export cancels streaming request")
+        end
+        vim.api.nvim_set_current_win(source_window)
+      end
+    end
+  end
 end
 
 tests["empty and populated final-only responses remain supported"] = function()
@@ -374,11 +452,11 @@ tests["edits invalidate immediately and coalesce into one new generation"] = fun
     return second ~= nil
   end, "debounced restart")
   equal(#fixture:state().requests, 2)
-  equal(picker:_get_prompt(), "match")
+  equal(picker.input:get(), "match")
   assert(first.params.partialResultToken ~= second.params.partialResultToken)
   fixture:chunk(first, { symbol("MatchStale", 3) })
   fixture:chunk(second, { symbol("MatchCurrent", 2) }, picker, 1)
-  assert(picker:get_selection().ordinal:find("MatchCurrent", 1, true))
+  assert(picker:current().text:find("MatchCurrent", 1, true))
   fixture:control("final", { request = first.id })
   assert(Symbols.has_status(picker, "Loading symbols"))
 end
@@ -406,7 +484,7 @@ tests["close and reopen ignore late old chunks and preserve unrelated progress"]
   picker, request = fixture:open()
   fixture:chunk(first, { symbol("Late") })
   fixture:chunk(request, { symbol("New") }, picker, 1)
-  assert(picker:get_selection().ordinal:find("New", 1, true))
+  assert(picker:current().text:find("New", 1, true))
   fixture:control("unrelated")
   Lsp.wait(function()
     for _, progress in ipairs(fixture.progress) do
@@ -427,8 +505,7 @@ tests["another component replacing progress routing is not overwritten"] = funct
   local replacement = function() end
   fixture.client.handlers["$/progress"] = replacement
   Lsp.wait(function()
-    return Symbols.has_status(picker, "Failed")
-      or not vim.api.nvim_buf_is_valid(picker.prompt_bufnr)
+    return Symbols.has_status(picker, "Failed") or picker.closed
   end, "lost routing detected")
   assert(fixture:cancelled(request))
   Symbols.close(picker)
@@ -469,7 +546,7 @@ tests["detach removes selectable results and cancels outstanding work"] = functi
   fixture:chunk(request, { symbol("Detached") }, picker, 1)
   vim.lsp.buf_detach_client(fixture.buffer, fixture.client.id)
   Lsp.wait(function()
-    return not vim.api.nvim_buf_is_valid(picker.prompt_bufnr) or Symbols.results(picker) == 0
+    return picker.closed or Symbols.results(picker) == 0
   end, "detach clears locations")
   assert(fixture:cancelled(request))
   equal(fixture.client.handlers["$/progress"], fixture.original_handler)
@@ -481,79 +558,9 @@ tests["server exit clears selectable results and owned routes"] = function()
   fixture:chunk(request, { symbol("Exited") }, picker, 1)
   fixture.client:notify("test/exit", {})
   Lsp.wait(function()
-    return fixture.client:is_stopped()
-      and (not vim.api.nvim_buf_is_valid(picker.prompt_bufnr) or Symbols.results(picker) == 0)
+    return fixture.client:is_stopped() and (picker.closed or Symbols.results(picker) == 0)
   end, "server exit cleanup")
   equal(fixture.client.handlers["$/progress"], fixture.original_handler)
-end
-
-tests["unpaced 50000 symbols retain last match during changing query"] = function()
-  local fixture = Symbols.fixture()
-  local measurements = {}
-  for trial = 1, 3 do
-    local picker, request = fixture:open()
-    local scans, refreshes = 0, 0
-    local refresh = picker.refresh
-    picker.refresh = function(self, ...)
-      refreshes = refreshes + 1
-      return refresh(self, ...)
-    end
-    picker:register_completion_callback(function()
-      scans = scans + 1
-    end)
-    local started = vim.uv.hrtime()
-    local previous = started
-    local first_selectable, heartbeat = nil, 0
-    local timer = assert(vim.uv.new_timer())
-    MiniTest.finally(function()
-      if not timer:is_closing() then
-        timer:stop()
-        timer:close()
-      end
-    end)
-    timer:start(
-      5,
-      5,
-      vim.schedule_wrap(function()
-        local now = vim.uv.hrtime()
-        heartbeat = math.max(heartbeat, (now - previous) / 1e6)
-        previous = now
-        if not first_selectable and picker:get_selection() then
-          first_selectable = (now - started) / 1e6
-        end
-      end)
-    )
-    vim.defer_fn(function()
-      if vim.api.nvim_buf_is_valid(picker.prompt_bufnr) then
-        picker:set_prompt("burst049999", true)
-      end
-    end, 30)
-    fixture.client:notify("test/burst", { request = request.id, total = 50000, batch = 256 })
-    finished(picker)
-    Lsp.wait(function()
-      return Symbols.results(picker) == 1 and picker:get_selection() ~= nil
-    end, "last burst match")
-    measurements[#measurements + 1] = {
-      trial = trial,
-      first_selectable_ms = first_selectable,
-      total_ms = (vim.uv.hrtime() - started) / 1e6,
-      max_heartbeat_ms = heartbeat,
-      refreshes = refreshes,
-      scans = scans,
-      symbols = 50000,
-      chunks = 196,
-    }
-    timer:stop()
-    timer:close()
-    assert(picker:get_selection().ordinal:find("Burst049999", 1, true))
-    Symbols.query(picker, "", 50000)
-    assert(scans < 196, "transport chunks must be coalesced before refreshing")
-    Symbols.close(picker)
-  end
-  local destination = vim.env.VENUE_READER_SYMBOL_BENCHMARK
-  if destination and destination ~= "" then
-    vim.fn.writefile({ vim.json.encode(measurements) }, destination)
-  end
 end
 
 tests["overlapping requests route separately and restore only after the last owner"] = function()
@@ -606,16 +613,16 @@ tests["source wipeout cancels and closes the picker"] = function()
       vim.api.nvim_buf_delete(replacement, { force = true })
     end
   end)
-  vim.api.nvim_win_set_buf(picker.original_win_id, replacement)
+  vim.api.nvim_win_set_buf(picker.main, replacement)
   vim.api.nvim_buf_delete(fixture.buffer, { force = true })
   assert(not vim.api.nvim_buf_is_valid(fixture.buffer), "source was actually wiped")
   Lsp.wait(function()
-    return not vim.api.nvim_buf_is_valid(picker.prompt_bufnr)
+    return picker.closed
   end, "source wipeout closes picker")
   assert(fixture:cancelled(request))
 end
 
-tests["missing optional Telescope reports a clear dependency error"] = function()
+tests["missing optional Snacks reports a clear dependency error"] = function()
   local script = vim.fn.tempname() .. ".lua"
   MiniTest.finally(function()
     vim.fn.delete(script)
@@ -627,7 +634,7 @@ tests["missing optional Telescope reports a clear dependency error"] = function(
     "  require('venue-reader.symbols').open({}, vim.api.nvim_get_current_buf(), {})",
     "end)",
     "assert(not success, 'unexpected success')",
-    "assert(tostring(failure):lower():find('telescope', 1, true), tostring(failure))",
+    "assert(tostring(failure):lower():find('snacks', 1, true), tostring(failure))",
   }, script)
   local result = vim
     .system({ vim.v.progpath, "--headless", "-u", "NONE", "-i", "NONE", "-l", script })
@@ -678,10 +685,7 @@ tests["public command opens the managed client stream"] = function()
   end, "managed client")
   vim.cmd("VenueReader symbols")
   Lsp.wait(function()
-    local prompts = require("telescope.state").get_existing_prompt_bufnrs()
-    if #prompts > 0 then
-      picker = require("telescope.actions.state").get_current_picker(prompts[1])
-    end
+    picker = require("snacks").picker.get()[1]
     return picker ~= nil
   end, "public picker")
   local state = Lsp.request(client, "test/state", {}, buffer)
@@ -691,9 +695,9 @@ tests["public command opens the managed client stream"] = function()
     symbols = { symbol("PublicEntry") },
   }, buffer)
   Lsp.wait(function()
-    return picker:get_selection() ~= nil
+    return picker:current() ~= nil
   end, "public streamed entry")
-  assert(picker:get_selection().ordinal:find("PublicEntry", 1, true))
+  assert(picker:current().text:find("PublicEntry", 1, true))
 end
 
 tests["renaming the source closes and cancels its old URI request"] = function()
@@ -704,29 +708,10 @@ tests["renaming the source closes and cancels its old URI request"] = function()
   vim.api.nvim_buf_set_name(fixture.buffer, vim.api.nvim_buf_get_name(fixture.buffer) .. ".renamed")
   assert(vim.uri_from_bufnr(fixture.buffer) ~= previous_uri)
   Lsp.wait(function()
-    return not vim.api.nvim_buf_is_valid(picker.prompt_bufnr)
+    return picker.closed
   end, "rename closes picker")
   assert(fixture:cancelled(request))
   equal(fixture.client.handlers["$/progress"], fixture.original_handler)
-end
-
-tests["close while a large received batch is converting cannot contaminate reopen"] = function()
-  local fixture = Symbols.fixture()
-  local picker, first = fixture:open()
-  fixture:control("burst", { request = first.id, total = 50000, batch = 50000, finish = false })
-  Symbols.close(picker)
-  assert(fixture:cancelled(first))
-  equal(fixture.client.handlers["$/progress"], fixture.original_handler)
-  local second
-  picker, second = fixture:open()
-  fixture:chunk(second, { symbol("Fresh") }, picker, 1)
-  fixture:control("final", { request = first.id })
-  vim.wait(150, function()
-    return false
-  end)
-  equal(Symbols.results(picker), 1)
-  assert(picker:get_selection().ordinal:find("Fresh", 1, true))
-  assert(Symbols.has_status(picker, "Loading symbols"))
 end
 
 tests["repeated appends defer restart until edit quietness"] = function()
@@ -740,7 +725,7 @@ tests["repeated appends defer restart until edit quietness"] = function()
     end)
     equal(#fixture:state().requests, 1)
     equal(Symbols.results(picker), 0)
-    equal(picker:get_selection(), nil)
+    equal(picker:current(), nil)
   end
   local second
   Lsp.wait(function()
@@ -754,23 +739,149 @@ tests["repeated appends defer restart until edit quietness"] = function()
   assert(fixture:cancelled(second))
 end
 
-tests["long Unicode display keeps full names and searchable suffixes"] = function()
+tests["long Unicode names retain their native location and searchable suffix"] = function()
   local fixture = Symbols.fixture()
-  local picker, request = fixture:open({ symbol_width = 25 })
+  local picker, request = fixture:open()
   local name = string.rep("Ж😀", 300) .. "HiddenSuffixNeedle"
   fixture:chunk(request, { symbol(name) }, picker, 1)
-  local entry = picker:get_selection()
-  equal(entry.symbol_name, name)
-  assert(entry.ordinal:find(name, 1, true))
-  assert(entry.value.text:find(name, 1, true))
-  local rendered = entry.display(entry)
-  assert(not rendered:find("HiddenSuffixNeedle", 1, true))
-  local prefix = assert(rendered:match("^(.-)…"), rendered)
-  assert(prefix:find("😀", 1, true))
-  equal(vim.fn.strcharpart(name, 0, vim.fn.strchars(prefix)), prefix)
+  local entry = picker:current()
+  equal(entry.name, name)
+  assert(entry.text:find(name, 1, true))
+  equal(entry.loc.uri, vim.uri_from_bufnr(fixture.buffer))
+  equal(entry.loc.range.start, { line = 0, character = 0 })
   Symbols.query(picker, "hiddensuffixneedle", 1)
-  equal(picker:get_selection().symbol_name, name)
-  equal(entry.symbol_name, name)
+  equal(picker:current(), entry)
+  equal(entry.name, name)
+end
+
+local function names(picker)
+  return vim.tbl_map(function(item)
+    return item.name
+  end, picker:items())
+end
+
+tests["native tree ancestry and connectors survive streamed siblings"] = function()
+  local fixture = Symbols.fixture()
+  field_source(fixture, 0)
+  local picker, request = fixture:open()
+  fixture:chunk(request, { field_tree() }, picker, 5)
+  local items = picker:items()
+  local message, message_type, group, field, side = unpack(items)
+  equal(names(picker), { "Message", "MessageType", "Group", "Symbol", "Side" })
+  assert(message.parent.root)
+  equal(message_type.parent, message)
+  equal(group.parent, message)
+  equal(field.parent, group)
+  equal(side.parent, group)
+  local icons = picker.opts.icons.tree
+  local function connector(item)
+    return require("snacks.picker.format").tree(item, picker)[1][1]
+  end
+  equal(connector(message), icons.last)
+  equal(connector(message_type), "  " .. icons.middle)
+  equal(connector(group), "  " .. icons.last)
+  equal(connector(field), "    " .. icons.middle)
+  equal(connector(side), "    " .. icons.last)
+  fixture:chunk(request, { symbol("NextMessage", 2, 19) }, picker, 6)
+  local next_message = picker:items()[6]
+  equal(next_message.parent, message.parent)
+  equal(connector(message), icons.middle)
+  equal(connector(side), icons.vertical .. "  " .. icons.last)
+  equal(connector(next_message), icons.last)
+  assert(Symbols.has_status(picker, "Loading symbols"))
+end
+
+tests["search retains native ancestors and clearing restores source order"] = function()
+  local fixture = Symbols.fixture()
+  field_source(fixture, 0)
+  local picker, request = fixture:open()
+  fixture:chunk(request, { field_tree() }, picker, 5)
+  Symbols.query(picker, "side", 3)
+  equal(names(picker), { "Message", "Group", "Side" })
+  local items = picker:items()
+  equal(items[3].parent, items[2])
+  equal(items[2].parent, items[1])
+  Symbols.query(picker, "", 5)
+  equal(names(picker), { "Message", "MessageType", "Group", "Symbol", "Side" })
+  equal(#fixture:state().requests, 1)
+end
+
+tests["kind filtering reconnects descendants to their nearest visible ancestor"] = function()
+  local fixture = Symbols.fixture()
+  field_source(fixture, 0)
+  local picker, request = fixture:open({ filter = { fix = { "Object", "Field" } } })
+  fixture:chunk(request, { field_tree() }, picker, 4)
+  equal(names(picker), { "Message", "MessageType", "Symbol", "Side" })
+  local items = picker:items()
+  for index = 2, #items do
+    equal(items[index].parent, items[1])
+  end
+  equal(items[4].last, true)
+  assert(not items[3].last)
+end
+
+tests["moderate streamed tree stays searchable through completion"] = function()
+  local fixture = Symbols.fixture()
+  local picker, request = fixture:open()
+  local function batch(first, last)
+    local roots = {}
+    for index = first, last do
+      local root = symbol("Message" .. index, 0, 19)
+      local group = symbol("Group" .. index, 1, 18)
+      group.children = {}
+      for child = 1, 5 do
+        group.children[child] = symbol(("Value%02d_%d"):format(index, child), 2, 8)
+      end
+      root.children = { group }
+      roots[#roots + 1] = root
+    end
+    return roots
+  end
+  fixture:chunk(request, batch(1, 10), picker, 70)
+  Symbols.query(picker, "Value20_5", 0)
+  fixture:chunk(request, batch(11, 20), picker, 3)
+  equal(names(picker), { "Message20", "Group20", "Value20_5" })
+  picker:action("list_bottom")
+  wait_selected(picker, "Value20_5")
+  assert(Symbols.has_status(picker, "Loading symbols"))
+  fixture:control("final", { request = request.id })
+  finished(picker)
+  equal(picker:current().name, "Value20_5")
+  Symbols.query(picker, "", 140)
+  equal(#fixture:state().requests, 1)
+end
+
+tests["opening again replaces the picker and cancels the previous request"] = function()
+  local fixture = Symbols.fixture()
+  local first, request = fixture:open()
+  fixture:chunk(request, { symbol("Old") }, first, 1)
+  vim.api.nvim_set_current_win(first.main)
+  local second = fixture:open()
+  assert(first.closed)
+  assert(second and not second.closed)
+  Lsp.wait(function()
+    return fixture:cancelled(request) and #fixture:state().requests == 2
+  end, "replacement request")
+  local replacement = fixture:state().requests[2]
+  fixture:chunk(replacement, { symbol("New") }, second, 1)
+  equal(second:current().name, "New")
+end
+
+tests["setup and native symbols work without Snacks when picker is disabled"] = function()
+  local root = assert(vim.env.VENUE_READER_TEST_ROOT)
+  local result = vim
+    .system({
+      vim.v.progpath,
+      "--headless",
+      "-u",
+      "NONE",
+      "-i",
+      "NONE",
+      "-l",
+      root .. "/tests/support/no_snacks.lua",
+    })
+    :wait(15000)
+  assert(result.code == 0, result.stderr or result.stdout)
 end
 
 return tests
