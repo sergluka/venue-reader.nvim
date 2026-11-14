@@ -55,6 +55,108 @@ tests["released server opens and decodes an unsaved named buffer"] = function()
   )
 end
 
+local function code_actions(capabilities)
+  local diagnostics = {}
+  local original_select = vim.ui.select
+  vim.lsp.config("venue_reader", {
+    capabilities = capabilities,
+    handlers = {
+      ["textDocument/publishDiagnostics"] = function(err, result, context)
+        if not err and result then
+          diagnostics[result.uri] = result
+        end
+        return vim.lsp.handlers["textDocument/publishDiagnostics"](err, result, context)
+      end,
+    },
+  })
+  require("venue-reader").setup({
+    server = { cmd = { assert(vim.env.VENUE_READER_TEST_SERVER), "--stdio" } },
+  })
+  MiniTest.finally(function()
+    rawset(vim.ui, "select", original_select)
+    vim.lsp.enable("venue_reader", false)
+    for _, client in ipairs(vim.lsp.get_clients({ name = "venue_reader" })) do
+      client:stop(true)
+    end
+    Lsp.wait(function()
+      return #vim.lsp.get_clients({ name = "venue_reader" }) == 0
+    end, "code-action client cleanup")
+  end)
+  local buffer = Lsp.buffer()
+  local uri = vim.uri_from_bufnr(buffer)
+  vim.api.nvim_set_current_buf(buffer)
+  local client
+  Lsp.wait(function()
+    client = vim.lsp.get_clients({ name = "venue_reader", bufnr = buffer })[1]
+    return client and client.initialized and diagnostics[uri] ~= nil
+  end, "code-action document configuration")
+  local function current_diagnostics()
+    Lsp.wait(function()
+      return diagnostics[uri].version == vim.lsp.util.buf_versions[buffer]
+    end, "diagnostics for the current document version")
+    return diagnostics[uri].diagnostics
+  end
+  local function select_action()
+    local choice, select
+    rawset(vim.ui, "select", function(items, options, callback)
+      equal(options.kind, "codeaction")
+      equal(#items, 1)
+      choice, select = items[1], callback
+    end)
+    vim.lsp.buf.code_action()
+    Lsp.wait(function()
+      return choice ~= nil
+    end, "native code-action picker")
+    return choice, select
+  end
+  return buffer, client, current_diagnostics, select_action
+end
+
+tests["plugin defaults offer and apply a native integrity quick fix"] = function()
+  local buffer, client, diagnostics, select_action = code_actions()
+  equal(client:supports_method("textDocument/codeAction", buffer), true)
+  equal(client.capabilities.workspace.workspaceEdit.documentChanges, true)
+  local initial_codes = vim.tbl_map(function(diagnostic)
+    return diagnostic.code
+  end, diagnostics())
+  assert(vim.list_contains(initial_codes, "bodyLength"))
+  assert(vim.list_contains(initial_codes, "checkSum"))
+  local choice, select = select_action()
+  equal(choice.action.kind, "quickfix")
+  equal(choice.action.edit.documentChanges[1].textDocument.version, 0)
+  select(choice)
+  equal(vim.api.nvim_buf_get_lines(buffer, 0, -1, false), { "8=FIX.4.4|9=5|35=0|10=163|" })
+  for _, diagnostic in ipairs(diagnostics()) do
+    assert(
+      diagnostic.code ~= "bodyLength" and diagnostic.code ~= "checkSum",
+      vim.inspect(diagnostic)
+    )
+  end
+end
+
+tests["native code actions reject stale edits from positive document versions"] = function()
+  local buffer, _, diagnostics, select_action = code_actions()
+  vim.api.nvim_buf_set_lines(buffer, 0, -1, false, { "8=FIX.4.4|35=0|34=1|" })
+  diagnostics()
+  local choice, select = select_action()
+  local version = choice.action.edit.documentChanges[1].textDocument.version
+  assert(version > 0)
+  local newer = { "8=FIX.4.4|35=1|112=synthetic|" }
+  vim.api.nvim_buf_set_lines(buffer, 0, -1, false, newer)
+  diagnostics()
+  assert(vim.lsp.util.buf_versions[buffer] > version)
+  select(choice)
+  equal(vim.api.nvim_buf_get_lines(buffer, 0, -1, false), newer)
+end
+
+tests["explicit documentChanges refusal keeps the real server provider disabled"] = function()
+  local buffer, client =
+    code_actions({ workspace = { workspaceEdit = { documentChanges = false } } })
+  equal(client.capabilities.workspace.workspaceEdit.documentChanges, false)
+  equal(client:supports_method("textDocument/codeAction", buffer), false)
+  equal(client.server_capabilities.codeActionProvider, nil)
+end
+
 tests["plugin default summaries and native mode transitions use the released server"] = function()
   local Plugin = require("venue-reader")
   Plugin.setup({ server = { cmd = { assert(vim.env.VENUE_READER_TEST_SERVER), "--stdio" } } })

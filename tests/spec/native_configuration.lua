@@ -91,6 +91,31 @@ local function configuration(transport, client)
   }, { client_id = client.id })
 end
 
+for _, case in ipairs({
+  { name = "default", expected = true },
+  { name = "explicit true", value = true, expected = true },
+  { name = "explicit false", value = false, expected = false },
+}) do
+  tests["repeated setup preserves documentChanges " .. case.name .. " in initialize"] = function()
+    local context = fixture({
+      capabilities = {
+        workspace = {
+          workspaceEdit = { documentChanges = case.value, normalizesLineEndings = false },
+        },
+        experimental = { unrelated = true },
+      },
+    })
+    Plugin.setup(context.options)
+    local buffer = Lsp.buffer()
+    local capabilities = transport_for(context).pending[1].params.capabilities
+    equal(capabilities.workspace.workspaceEdit.documentChanges, case.expected)
+    equal(capabilities.workspace.workspaceEdit.normalizesLineEndings, false)
+    equal(capabilities.experimental.unrelated, true)
+    equal(capabilities.experimental.venueReader.summaryTokens, 1)
+    initialized(context, buffer)
+  end
+end
+
 tests["native settings survive setup and mode changes"] = function()
   local settings = {
     fix = {
@@ -331,7 +356,10 @@ end
 
 tests["setup after a module reload keeps native overrides"] = function()
   local result = child().lua_func(function()
-    vim.lsp.config("venue_reader", { cmd = { "reload-native", "--stdio" } })
+    vim.lsp.config("venue_reader", {
+      cmd = { "reload-native", "--stdio" },
+      capabilities = { workspace = { workspaceEdit = { documentChanges = false } } },
+    })
     local options = {
       server = { auto_install = false },
       treesitter = { enabled = false },
@@ -345,13 +373,18 @@ tests["setup after a module reload keeps native overrides"] = function()
     end
     vim.g.fix_plugin_owner = nil -- luacheck: ignore 122
     local success, failure = pcall(require("venue-reader").setup, options)
+    local capabilities = vim.lsp.config.venue_reader.capabilities
     return {
       reloaded = success or tostring(failure),
       hooks = require("venue-reader.native").check(vim.lsp.config.venue_reader),
       acquisition = require("venue-reader").status().acquisition.state,
+      document_changes = capabilities.workspace.workspaceEdit.documentChanges,
     }
   end)
-  equal(result, { reloaded = true, hooks = true, acquisition = "external" })
+  equal(
+    result,
+    { reloaded = true, hooks = true, acquisition = "external", document_changes = false }
+  )
 end
 
 tests["removed options and required handler replacements fail clearly"] = function()

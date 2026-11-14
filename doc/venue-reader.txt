@@ -96,6 +96,12 @@ enablement. Run :VenueReader status and :checkhealth venue-reader. A buffer can
 have a name without a saved file. :lsp enable venue_reader enables attachment;
 :lsp disable venue_reader prevents future automatic attachment.
 
+Stale code actions ~
+An action requested for the initial state of a document can apply stale edits
+if the buffer changes before selection. This can insert incorrect text. If the
+buffer changes while the action menu is open, dismiss it and request actions
+again. This Neovim limitation was reproduced on 0.12.2 and 0.12.5.
+
 Server installation failed ~
 Check acquisition state, platform and required tools in |venue-reader-server|.
 Fix the cause and use :VenueReader install server. A compatible explicit binary
