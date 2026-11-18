@@ -14,11 +14,7 @@ and navigation. It is not required for LSP features.
 
 ## Installation
 
-Choose one method. The repository is currently private; GitHub access is required.
-This development branch requires a compatible local server through `server.cmd`
-or native `cmd`.
-The pinned release does not yet support structured summaries; automatic
-installation reports this until a compatible release is pinned.
+Choose one installation method below.
 
 ### LazyVim
 
@@ -234,10 +230,7 @@ Start with `:help venue-reader` for the full offline guide, including setup,
 commands, annotations, syntax, troubleshooting and development. The
 [help index](doc/venue-reader.txt) links its topic files.
 
-The wiki is prepared in the sibling `venue-reader.nvim.wiki` repository.
-Its [online pages](https://github.com/sergluka/venue-reader.nvim/wiki/Home) will
-become available after publication, when the project is public. Until then,
-read that checkout locally or use the bundled help.
+See the [plugin wiki](https://github.com/sergluka/venue-reader.nvim/wiki/Home) for the online guide.
 
 Development commands and platform acceptance status are in
 [Contributing](https://github.com/sergluka/venue-reader.nvim/wiki/Contributing),

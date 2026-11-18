@@ -206,10 +206,7 @@ command fails rather than selecting another executable.
 
 If no binary is found and auto_install is true, the pinned release installs
 asynchronously under stdpath("data")/venue-reader/. The adapter verifies SHA-256
-before extraction. This development branch requires a compatible local binary
-through server.cmd until a compatible release is pinned. The required series
-is stored separately from artifact metadata in release.json; an incompatible
-pin is rejected before downloading. Compatible installations are reused without automatic
+before extraction. Compatible installations are reused without automatic
 upgrades, PATH changes or replacement of external installations.
 
 Automatic installation tools ~

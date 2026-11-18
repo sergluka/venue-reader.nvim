@@ -30,11 +30,6 @@ https://github.com/sergluka/venue-reader.nvim/blob/master/README.md
 Wiki:
 https://github.com/sergluka/venue-reader.nvim/wiki/Home
 
-The project is currently private. Wiki sources are prepared in the sibling
-venue-reader.nvim.wiki checkout. Its GitHub wiki links become available after
-publication. This help includes the installation, usage and reference material;
-the wiki also includes a colored group illustration.
-
 ==============================================================================
 First use                                                *venue-reader-usage*
 

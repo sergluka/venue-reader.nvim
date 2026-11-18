@@ -1,24 +1,24 @@
 {
   "series": "0.4",
-  "version": "0.2.0",
-  "commit": "ebe01a8e764ff24b6cbd85d02df67ec798ee5680",
+  "version": "0.4.0",
+  "commit": "8960efa95bed4070a8194eaa658a9a6503785d36",
   "repository": "sergluka/venue-reader",
   "artifacts": {
     "x86_64-unknown-linux-gnu": {
       "archive": "venue-reader-x86_64-unknown-linux-gnu.tar.gz",
-      "sha256": "c87a946c7f17aedafdceb1821356bd0cded12d1b728103504f1b5b2c519c87fe"
+      "sha256": "5ae12214453739d5869247584398c6f367d31f6ac118aa712b72c7dbf7b31dd6"
     },
     "x86_64-apple-darwin": {
       "archive": "venue-reader-x86_64-apple-darwin.tar.gz",
-      "sha256": "1511517c999ccb2139c77cd23dbda70eb41090edd7bd26c6d4e26f7eb8f8d413"
+      "sha256": "928900f8a4fae5486c8323f826957df99e29a52c1d57f5ccab3f6012da50d734"
     },
     "aarch64-apple-darwin": {
       "archive": "venue-reader-aarch64-apple-darwin.tar.gz",
-      "sha256": "7cce3ebd549423f839feb0d96aa7cf457235df4059ee3e4d1cf6889f28b4a89c"
+      "sha256": "dfc34d83a7e9824d8f6f38291d857ac4906eb781043fb1848fc2bf20941e0451"
     },
     "x86_64-pc-windows-msvc": {
       "archive": "venue-reader-x86_64-pc-windows-msvc.zip",
-      "sha256": "6a76f71b09822c4a2135ae0411203c6c86df33b2a34e35c853281827a04b8a53"
+      "sha256": "ecf85d074280a5c80597542cd06bc277476b7223f117fcdaaf92a06b0a2e6554"
     }
   }
 }
