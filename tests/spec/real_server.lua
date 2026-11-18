@@ -103,11 +103,17 @@ local function code_actions(capabilities)
       equal(#items, 1)
       choice, select = items[1], callback
     end)
-    vim.lsp.buf.code_action()
+    vim.lsp.buf.code_action({ context = { only = { "quickfix" } } })
     Lsp.wait(function()
       return choice ~= nil
     end, "native code-action picker")
-    return choice, select
+    return choice,
+      function(selected)
+        select(selected)
+        Lsp.wait(function()
+          return next(client.requests) == nil
+        end, "native action resolution and application")
+      end
   end
   return buffer, client, current_diagnostics, select_action
 end

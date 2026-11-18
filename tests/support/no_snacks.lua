@@ -3,7 +3,11 @@ vim.opt.runtimepath:prepend(root)
 local Plugin = require("venue-reader")
 assert(#vim.api.nvim_get_runtime_file("lua/snacks/init.lua", false) == 0)
 vim.lsp.config("venue_reader", {
-  cmd = { "python3", root .. "/tests/support/symbol_server.py" },
+  cmd = {
+    "python3",
+    root .. "/tests/support/symbol_server.py",
+    require("venue-reader.release").series .. ".0",
+  },
 })
 local settings = {
   treesitter = { enabled = false },

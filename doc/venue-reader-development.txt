@@ -125,6 +125,8 @@ After preparation, checks and tests run without network access: >sh
     make lint
     make test
     make test SUITE=real_server
+    make test SUITE=capabilities SERVER=/absolute/path/to/venue-reader
+    make test SUITE=native_only SERVER=/absolute/path/to/venue-reader
     make test SUITE=transport
     make test SUITE=dependencies
     make test SUITE=lifecycle
@@ -140,18 +142,27 @@ After preparation, checks and tests run without network access: >sh
 <
 Normal tests verify dependency revisions and parser integrity. They never
 download or compile. Tests isolate Neovim configuration, data, state and working
-directory in a temporary directory. mini.test reports failures with a nonzero
+directory separately for each suite. Each child has a 60-second timeout;
+mini.test has a 55-second limit within that child. The native_only suite runs
+without the plugin or Snacks on runtimepath and uses unmodified native client
+capabilities. mini.test reports failures with a nonzero
 exit code; finalizers clean clients and buffers. The startup-failure case
 intentionally produces a server-exit warning with code 7.
 
-Default tests include commands_server, checking decoded yank and command helpers
-against the pinned published release. For local server development:
+Default tests include commands_server, checking decoded yank and command helpers.
+Use a compatible local server for current-source development:
 >sh
-    make test SUITE=real_server SERVER=/absolute/path/to/venue-reader
+    make test SERVER=/absolute/path/to/venue-reader
 <
 The runner labels overrides separately; they are not release-artifact evidence.
+Running without SERVER requires a prepared release compatible with the plugin's
+supported series. An older incompatible pin cannot verify current-source behavior.
 make test NVIM=/path/to/nvim selects another Neovim executable. Before release
 tests, the prepared archive and extracted binary are rechecked.
+
+Set VENUE_READER_TEST_OUTPUT=/absolute/path to retain suite logs, timings and
+native/plugin capability snapshots. Protocol-only assertions, including hint
+resolution and cancellation, do not imply a corresponding editor UI.
 
 Format changed files with make format. The Makefile coordinates standard tools;
 tests can also be launched directly: >sh

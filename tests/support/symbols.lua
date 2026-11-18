@@ -39,6 +39,8 @@ end
 
 function Symbols.fixture(options)
   options = options or {}
+  -- This fixture bypasses setup(), which normally registers the FIX filetype.
+  vim.filetype.add({ extension = { fix = "fix" } })
   local pickers = {}
   -- mini.test runs finalizers in registration order; close floats before source buffers.
   MiniTest.finally(function()
