@@ -1,6 +1,6 @@
 # venue-reader.nvim
 
-An optional Neovim adapter for the [Venue Reader language server](https://github.com/sergluka/venue-reader).
+A Neovim plugin for the [Venue Reader language server](https://github.com/sergluka/venue-reader).
 Requires Neovim 0.12+. The server also works with Neovim's native LSP client
 without this plugin.
 
@@ -30,9 +30,13 @@ return {
       { "nvim-treesitter/nvim-treesitter", branch = "main" },
       { "nvim-treesitter/nvim-treesitter-textobjects", branch = "main" },
     },
-    opts = {}, -- adapter options
+    opts = {
+      -- plugin settings
+    },
     config = function(_, opts)
-      vim.lsp.config("venue_reader", { settings = { fix = {} } })
+      vim.lsp.config("venue_reader", {
+        -- server settings
+      })
       require("venue-reader").setup(opts)
     end,
   },
@@ -57,7 +61,14 @@ vim.pack.add({
     src = "https://github.com/sergluka/venue-reader.nvim",
   },
 })
-require("venue-reader").setup()
+
+vim.lsp.config("venue_reader", {
+  -- server settings
+})
+
+require("venue-reader").setup({
+  -- plugin settings
+})
 ```
 
 Update with `:lua vim.pack.update({ "venue-reader.nvim" })`.
