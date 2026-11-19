@@ -303,7 +303,7 @@ function M.configure(summary, predicate)
   documents = {}
   options = vim.deepcopy(summary)
   vim.api.nvim_set_hl(0, "VenueReaderSummary", { default = true, link = "Comment" })
-  for _, client in ipairs(vim.lsp.get_clients({ name = "venue_reader" })) do
+  for _, client in ipairs(vim.lsp.get_clients({ name = "venue-reader" })) do
     if managed(client) then
       vim.lsp.codelens.enable(false, { client_id = client.id })
     end

@@ -5,7 +5,7 @@ local Plugin = require("venue-reader")
 local tests = MiniTest.new_set({
   hooks = {
     pre_case = function()
-      vim.lsp.config.venue_reader = {} -- luacheck: ignore 122
+      vim.lsp.config["venue-reader"] = {} -- luacheck: ignore 122
     end,
   },
 })
@@ -19,7 +19,7 @@ local function configure(value)
     end
     return vim.lsp.handlers["textDocument/publishDiagnostics"](err, result, ctx)
   end
-  vim.lsp.config("venue_reader", { handlers = { ["textDocument/publishDiagnostics"] = handler } })
+  vim.lsp.config("venue-reader", { handlers = { ["textDocument/publishDiagnostics"] = handler } })
   Plugin.setup(value)
 end
 
@@ -29,12 +29,12 @@ local function setup()
     server = { cmd = { assert(vim.env.VENUE_READER_TEST_SERVER), "--stdio" } },
   })
   MiniTest.finally(function()
-    vim.lsp.enable("venue_reader", false)
-    for _, client in ipairs(vim.lsp.get_clients({ name = "venue_reader" })) do
+    vim.lsp.enable("venue-reader", false)
+    for _, client in ipairs(vim.lsp.get_clients({ name = "venue-reader" })) do
       client:stop(true)
     end
     Lsp.wait(function()
-      return #vim.lsp.get_clients({ name = "venue_reader" }) == 0
+      return #vim.lsp.get_clients({ name = "venue-reader" }) == 0
     end, "cleanup")
   end)
 end
@@ -43,7 +43,7 @@ local function client(buffer)
   vim.api.nvim_set_current_buf(buffer)
   local result
   Lsp.wait(function()
-    result = vim.lsp.get_clients({ bufnr = buffer, name = "venue_reader" })[1]
+    result = vim.lsp.get_clients({ bufnr = buffer, name = "venue-reader" })[1]
     if not result or not result.initialized then
       return false
     end
@@ -129,7 +129,7 @@ tests["unnamed FIX buffer attaches only after naming"] = function()
     vim.api.nvim_buf_delete(buffer, { force = true })
   end)
   vim.api.nvim_set_option_value("filetype", "fix", { buf = buffer })
-  equal(#vim.lsp.get_clients({ bufnr = buffer, name = "venue_reader" }), 0)
+  equal(#vim.lsp.get_clients({ bufnr = buffer, name = "venue-reader" }), 0)
   vim.api.nvim_buf_call(buffer, function()
     vim.cmd.file({ args = { vim.fn.tempname() .. ".fix" } })
   end)
@@ -232,14 +232,14 @@ tests["native disable during acquisition prevents attachment"] = function()
   vim.api.nvim_buf_call(buffer, function()
     vim.cmd.file({ args = { vim.fn.tempname() .. ".fix" } })
   end)
-  vim.cmd("lsp disable venue_reader")
+  vim.cmd("lsp disable venue-reader")
   vim.wait(80)
-  equal(#vim.lsp.get_clients({ bufnr = buffer, name = "venue_reader" }), 0)
+  equal(#vim.lsp.get_clients({ bufnr = buffer, name = "venue-reader" }), 0)
   local other = Lsp.buffer()
   vim.api.nvim_buf_call(other, function()
     vim.cmd.file({ args = { vim.fn.tempname() .. ".fix" } })
   end)
-  equal(#vim.lsp.get_clients({ bufnr = other, name = "venue_reader" }), 0)
+  equal(#vim.lsp.get_clients({ bufnr = other, name = "venue-reader" }), 0)
   Plugin.start(buffer)
   client(buffer)
   client(other)
@@ -252,19 +252,19 @@ tests["native restart adopts registered settings instead of live changes"] = fun
   local initial = client(first)
   Plugin.restart(first)
   Lsp.wait(function()
-    local current = vim.lsp.get_clients({ bufnr = first, name = "venue_reader" })[1]
+    local current = vim.lsp.get_clients({ bufnr = first, name = "venue-reader" })[1]
     return current and current.initialized and current.id ~= initial.id
   end, "first replacement")
   local second = named_buffer(directory)
   local replacement = client(second)
   equal(client(first).id, replacement.id)
-  vim.lsp.config("venue_reader", { settings = { fix = { limits = { rangeLines = 111 } } } })
+  vim.lsp.config("venue-reader", { settings = { fix = { limits = { rangeLines = 111 } } } })
   equal(replacement.settings.fix.limits, nil)
   replacement.settings.fix.limits = { rangeLines = 19 }
   replacement:notify("workspace/didChangeConfiguration", { settings = replacement.settings })
   Plugin.restart(first)
   Lsp.wait(function()
-    local candidates = vim.lsp.get_clients({ bufnr = first, name = "venue_reader" })
+    local candidates = vim.lsp.get_clients({ bufnr = first, name = "venue-reader" })
     return candidates[1] and candidates[1].initialized and candidates[1].id ~= replacement.id
   end, "second replacement")
   equal(client(first).id, client(second).id)
@@ -315,8 +315,8 @@ tests["native enable reattaches buffers after a crash"] = function()
   Lsp.wait(function()
     return vim.lsp.get_client_by_id(initial.id) == nil
   end, "crash cleanup")
-  equal(#vim.lsp.get_clients({ bufnr = first, name = "venue_reader" }), 0)
-  vim.cmd("lsp enable venue_reader")
+  equal(#vim.lsp.get_clients({ bufnr = first, name = "venue-reader" }), 0)
+  vim.cmd("lsp enable venue-reader")
   equal(client(first).id, client(second).id)
 end
 
@@ -337,13 +337,13 @@ tests["native stop and enable work without plugin suppression"] = function()
       table.insert(errors, message)
     end
   end)
-  vim.cmd("lsp stop venue_reader")
+  vim.cmd("lsp stop venue-reader")
   Lsp.wait(function()
     return vim.lsp.get_client_by_id(active.id) == nil
   end, "external stop")
   equal(errors, {})
   equal(Plugin.status(buffer).session, nil)
-  vim.cmd("lsp enable venue_reader")
+  vim.cmd("lsp enable venue-reader")
   client(buffer)
 end
 
@@ -393,9 +393,9 @@ tests["native restart retains buffers and leaves unrelated clients alone"] = fun
   local unrelated = Lsp.start({ name = "unrelated", cmd = foreign.command }, first)
   foreign:initialize()
   Lsp.ready(unrelated, first)
-  vim.cmd("lsp restart venue_reader")
+  vim.cmd("lsp restart venue-reader")
   Lsp.wait(function()
-    local current = vim.lsp.get_clients({ bufnr = first, name = "venue_reader" })[1]
+    local current = vim.lsp.get_clients({ bufnr = first, name = "venue-reader" })[1]
     return current and current.initialized and current.id ~= old.id
   end, "native replacement")
   equal(client(first).id, client(second).id)
@@ -415,7 +415,7 @@ tests["cold initialization mode changes preserve native settings"] = function()
       transport:exit(0, 0)
     end
   end)
-  vim.lsp.config("venue_reader", { settings = { fix = { limits = { rangeLines = 19 } } } })
+  vim.lsp.config("venue-reader", { settings = { fix = { limits = { rangeLines = 19 } } } })
   setup()
   local buffer = vim.api.nvim_create_buf(true, false)
   vim.api.nvim_set_current_buf(buffer)
@@ -430,7 +430,7 @@ tests["cold initialization mode changes preserve native settings"] = function()
   transport:initialize()
   local active
   Lsp.wait(function()
-    active = vim.lsp.get_clients({ name = "venue_reader" })[1]
+    active = vim.lsp.get_clients({ name = "venue-reader" })[1]
     return active ~= nil
   end, "cold client initialization")
   equal(active.settings.fix.limits.rangeLines, 19)

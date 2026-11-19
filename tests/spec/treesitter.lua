@@ -583,7 +583,7 @@ tests["native semantic price and group styling stay visible over real syntax"] =
     end, "native price/group tokens with Tree-sitter active")
     assert(vim.b[target].ts_highlight == true)
     vim.lsp.inlay_hint.enable(false, { bufnr = target })
-    local active = assert(vim.lsp.get_clients({ bufnr = target, name = "venue_reader" })[1])
+    local active = assert(vim.lsp.get_clients({ bufnr = target, name = "venue-reader" })[1])
     local namespace = vim.api.nvim_create_namespace("nvim.lsp.semantic_tokens:" .. active.id)
     local styles = {}
     for _, mark in
@@ -632,7 +632,7 @@ tests["real LSP hover and decoded yank work while grammar is pending and failed"
       end
       return vim.lsp.handlers["textDocument/publishDiagnostics"](err, result, context, value)
     end
-    vim.lsp.config("venue_reader", { handlers = { ["textDocument/publishDiagnostics"] = handler } })
+    vim.lsp.config("venue-reader", { handlers = { ["textDocument/publishDiagnostics"] = handler } })
     require("venue-reader").setup({
       server = { cmd = { binary, "--stdio" } },
       summary = { mode = "off" },
@@ -640,7 +640,7 @@ tests["real LSP hover and decoded yank work while grammar is pending and failed"
     local fixture = require("tests.support.treesitter")
     local target = fixture.buffer(nil, vim.fn.tempname() .. ".fix")
     fixture.wait(function()
-      local active = vim.lsp.get_clients({ bufnr = target, name = "venue_reader" })[1]
+      local active = vim.lsp.get_clients({ bufnr = target, name = "venue-reader" })[1]
       return active and active.initialized and reports[vim.uri_from_bufnr(target)]
     end, "LSP document readiness while grammar pending")
   end, assert(vim.env.VENUE_READER_TEST_SERVER))
@@ -652,7 +652,7 @@ tests["real LSP hover and decoded yank work while grammar is pending and failed"
     end
     process.lua_func(function()
       local target = vim.api.nvim_get_current_buf()
-      local active = assert(vim.lsp.get_clients({ bufnr = target, name = "venue_reader" })[1])
+      local active = assert(vim.lsp.get_clients({ bufnr = target, name = "venue-reader" })[1])
       local response = assert(active:request_sync("textDocument/hover", {
         textDocument = { uri = vim.uri_from_bufnr(target) },
         position = { line = 0, character = 12 },

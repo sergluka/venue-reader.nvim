@@ -33,7 +33,7 @@ local function exercise(profile)
   assert(vim.bo.filetype == "fix", "Expected .fix filetype detection")
   local client
   assert(vim.wait(120000, function()
-    client = vim.lsp.get_clients({ bufnr = 0, name = "venue_reader" })[1]
+    client = vim.lsp.get_clients({ bufnr = 0, name = "venue-reader" })[1]
     return client and client.initialized or plugin.status().acquisition.state == "failed"
   end, 50) and client and client.initialized, vim.inspect(plugin.status()))
   local path = vim.fs.normalize(assert(client.config.venue_reader_argv)[1])

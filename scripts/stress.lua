@@ -41,7 +41,7 @@ local function child(size, binary, output)
     },
   })
   local ready = {}
-  local config = vim.lsp.config.venue_reader
+  local config = vim.lsp.config["venue-reader"]
   -- luacheck: push ignore 122
   config.handlers["textDocument/publishDiagnostics"] = function(err, result, context)
     if not err and result then
@@ -69,7 +69,7 @@ local function child(size, binary, output)
   end
 
   wait_for(function()
-    active = vim.lsp.get_clients({ name = "venue_reader", bufnr = buffer })[1]
+    active = vim.lsp.get_clients({ name = "venue-reader", bufnr = buffer })[1]
     return active
       and active.initialized
       and ready[vim.uri_from_bufnr(buffer)]

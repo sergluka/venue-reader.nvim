@@ -10,7 +10,7 @@ local equal = MiniTest.expect.equality
 local tests = MiniTest.new_set({
   hooks = {
     pre_case = function()
-      vim.lsp.config.venue_reader = {} -- luacheck: ignore 122
+      vim.lsp.config["venue-reader"] = {} -- luacheck: ignore 122
     end,
   },
 })
@@ -22,8 +22,8 @@ local function fixture(config, options)
     messages[#messages + 1] = tostring(message)
   end)
   MiniTest.finally(function()
-    vim.lsp.enable("venue_reader", false)
-    local clients = vim.lsp.get_clients({ name = "venue_reader", _uninitialized = true })
+    vim.lsp.enable("venue-reader", false)
+    local clients = vim.lsp.get_clients({ name = "venue-reader", _uninitialized = true })
     for _, client in ipairs(clients) do
       client:stop(true)
     end
@@ -42,7 +42,7 @@ local function fixture(config, options)
       return transport.command(dispatchers)
     end,
   }, config or {})
-  vim.lsp.config("venue_reader", config)
+  vim.lsp.config("venue-reader", config)
   local setup_options = vim.tbl_deep_extend("force", {
     server = { cmd = { "/must-not-discover/native-command", "--stdio" }, auto_install = false },
     treesitter = { enabled = false },
@@ -67,7 +67,7 @@ local function initialized(context, buffer)
   transport:initialize()
   local client
   Lsp.wait(function()
-    client = vim.lsp.get_clients({ name = "venue_reader" })[1]
+    client = vim.lsp.get_clients({ name = "venue-reader" })[1]
     return client
       and client.initialized
       and (not buffer or vim.lsp.buf_is_attached(buffer, client.id))
@@ -129,10 +129,10 @@ tests["native settings survive setup and mode changes"] = function()
   local context = fixture({ settings = vim.deepcopy(settings) })
   local buffer = Lsp.buffer()
   local client, transport = initialized(context, buffer)
-  equal(vim.lsp.config.venue_reader.settings, settings)
+  equal(vim.lsp.config["venue-reader"].settings, settings)
   for _, mode in ipairs({ "front", "above", "hidden", "codelens", "off" }) do
     Plugin.summary(mode)
-    equal(vim.lsp.config.venue_reader.settings, settings)
+    equal(vim.lsp.config["venue-reader"].settings, settings)
     equal(client.settings.fix.messageSummary.template, settings.fix.messageSummary.template)
     equal(client.settings.fix.diagnostics, settings.fix.diagnostics)
     equal(client.settings.fix.limits, settings.fix.limits)
@@ -143,7 +143,7 @@ end
 
 tests["settings registered after setup reach initialization and native pulls"] = function()
   local context = fixture()
-  vim.lsp.config("venue_reader", { settings = { fix = { limits = { rangeLines = 23 } } } })
+  vim.lsp.config("venue-reader", { settings = { fix = { limits = { rangeLines = 23 } } } })
   local buffer = Lsp.buffer()
   local transport = transport_for(context)
   equal(transport.pending[1].params.initializationOptions.fix.limits.rangeLines, 23)
@@ -201,7 +201,7 @@ tests["explicit live settings survive summary mode changes on command-only clien
   Plugin.summary("codelens")
   equal(client.settings.fix.messageSummary.channels, { inlayHints = false, codeLens = true })
   equal(client.settings.fix.limits.rangeLines, 37)
-  equal(vim.lsp.config.venue_reader.settings.fix.limits.rangeLines, 31)
+  equal(vim.lsp.config["venue-reader"].settings.fix.limits.rangeLines, 31)
   equal(configuration(transport, client)[1].limits.rangeLines, 37)
 end
 
@@ -293,7 +293,7 @@ tests["selected summary mode overrides registered channels across restart"] = fu
     replacement.pending[1].params.initializationOptions.fix.messageSummary.channels,
     { inlayHints = false, codeLens = true }
   )
-  equal(vim.lsp.config.venue_reader.settings.fix.messageSummary.channels, registered)
+  equal(vim.lsp.config["venue-reader"].settings.fix.messageSummary.channels, registered)
   equal(table.concat(context.messages, "\n"):find("contradicts", 1, true), nil)
 end
 
@@ -309,14 +309,14 @@ for kind, root_dir in pairs({
     vim.api.nvim_set_option_value("filetype", "fix", { buf = buffer })
     vim.wait(100)
     equal(#context.transports, 0)
-    equal(#vim.lsp.get_clients({ bufnr = buffer, name = "venue_reader" }), 0)
+    equal(#vim.lsp.get_clients({ bufnr = buffer, name = "venue-reader" }), 0)
   end
 end
 
 tests["settings registered after setup reach a FIX buffer opened before setup"] = function()
   local buffer = Lsp.buffer()
   local context = fixture()
-  vim.lsp.config("venue_reader", { settings = { fix = { limits = { rangeLines = 43 } } } })
+  vim.lsp.config("venue-reader", { settings = { fix = { limits = { rangeLines = 43 } } } })
   local transport = transport_for(context)
   equal(transport.pending[1].params.initializationOptions.fix.limits.rangeLines, 43)
   local client = initialized(context, buffer)
@@ -348,7 +348,7 @@ tests["status and health work before setup and after a rejected setup"] = functi
       }
     end
     local before = probe()
-    vim.lsp.config("venue_reader", { handlers = { ["workspace/configuration"] = function() end } })
+    vim.lsp.config("venue-reader", { handlers = { ["workspace/configuration"] = function() end } })
     local rejected = not pcall(plugin.setup, { treesitter = { enabled = false } })
     return { before = before, rejected = rejected, after = probe() }
   end)
@@ -358,7 +358,7 @@ end
 
 tests["setup after a module reload keeps native overrides"] = function()
   local result = child().lua_func(function()
-    vim.lsp.config("venue_reader", {
+    vim.lsp.config("venue-reader", {
       cmd = { "reload-native", "--stdio" },
       capabilities = { workspace = { workspaceEdit = { documentChanges = false } } },
     })
@@ -375,10 +375,10 @@ tests["setup after a module reload keeps native overrides"] = function()
     end
     vim.g.fix_plugin_owner = nil -- luacheck: ignore 122
     local success, failure = pcall(require("venue-reader").setup, options)
-    local capabilities = vim.lsp.config.venue_reader.capabilities
+    local capabilities = vim.lsp.config["venue-reader"].capabilities
     return {
       reloaded = success or tostring(failure),
-      hooks = require("venue-reader.native").check(vim.lsp.config.venue_reader),
+      hooks = require("venue-reader.native").check(vim.lsp.config["venue-reader"]),
       acquisition = require("venue-reader").status().acquisition.state,
       document_changes = capabilities.workspace.workspaceEdit.documentChanges,
     }
@@ -396,7 +396,7 @@ tests["removed options and required handler replacements fail clearly"] = functi
   MiniTest.expect.error(function()
     Plugin.setup({ runtime = {} })
   end, "runtime")
-  vim.lsp.config("venue_reader", {
+  vim.lsp.config("venue-reader", {
     handlers = { ["workspace/configuration"] = function() end },
   })
   MiniTest.expect.error(function()
@@ -523,7 +523,7 @@ local function runtime_fixture()
     return transport.command(dispatchers)
   end)
   MiniTest.finally(function()
-    vim.lsp.enable("venue_reader", false)
+    vim.lsp.enable("venue-reader", false)
     for _, transport in ipairs(transports) do
       transport:exit(0, 0)
     end
@@ -531,7 +531,7 @@ local function runtime_fixture()
     rawset(Server, "resolve", original_resolve)
     rawset(vim.lsp.rpc, "start", original_rpc)
   end)
-  vim.lsp.config("venue_reader", {
+  vim.lsp.config("venue-reader", {
     root_dir = function(buffer, on_dir)
       on_dir(vim.fs.joinpath(vim.uv.cwd(), "runtime-root-" .. buffer))
     end,
@@ -607,7 +607,7 @@ tests["filetype change during discovery prevents attachment"] = function()
   context.finish(1)
   vim.wait(60)
   equal(context.commands, {})
-  equal(#vim.lsp.get_clients({ bufnr = buffer, name = "venue_reader" }), 0)
+  equal(#vim.lsp.get_clients({ bufnr = buffer, name = "venue-reader" }), 0)
 end
 
 tests["disable after root delivery prevents the scheduled transport startup"] = function()
@@ -617,7 +617,7 @@ tests["disable after root delivery prevents the scheduled transport startup"] = 
     return #context.pending == 1
   end, "initial discovery")
   context.finish(1)
-  vim.lsp.enable("venue_reader", false)
+  vim.lsp.enable("venue-reader", false)
   vim.wait(60)
   equal(context.commands, {})
 end

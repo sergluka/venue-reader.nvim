@@ -5,7 +5,7 @@ local Plugin = require("venue-reader")
 local tests = MiniTest.new_set({
   hooks = {
     pre_case = function()
-      vim.lsp.config.venue_reader = {} -- luacheck: ignore 122
+      vim.lsp.config["venue-reader"] = {} -- luacheck: ignore 122
     end,
   },
 })
@@ -141,18 +141,18 @@ tests["released server supplies native price quantity and repeating-group tokens
   local settings = {
     fix = { inlayHints = { tagNames = { enabled = true }, groupPaths = { enabled = true } } },
   }
-  vim.lsp.config("venue_reader", { settings = settings })
+  vim.lsp.config("venue-reader", { settings = settings })
   Plugin.setup({
     server = { cmd = { binary, "--stdio" } },
     summary = { mode = "off" },
   })
   MiniTest.finally(function()
-    vim.lsp.enable("venue_reader", false)
-    for _, client in ipairs(vim.lsp.get_clients({ name = "venue_reader" })) do
+    vim.lsp.enable("venue-reader", false)
+    for _, client in ipairs(vim.lsp.get_clients({ name = "venue-reader" })) do
       client:stop(true)
     end
     Lsp.wait(function()
-      return #vim.lsp.get_clients({ name = "venue_reader" }) == 0
+      return #vim.lsp.get_clients({ name = "venue-reader" }) == 0
     end, "highlight client cleanup")
   end)
   local message = "8=FIX.4.4|35=W|268=2|269=0|270=123.45|271=100|269=1|270=124.45|271=200|"
@@ -160,7 +160,7 @@ tests["released server supplies native price quantity and repeating-group tokens
   vim.api.nvim_set_current_buf(buffer)
   local active
   Lsp.wait(function()
-    active = vim.lsp.get_clients({ bufnr = buffer, name = "venue_reader" })[1]
+    active = vim.lsp.get_clients({ bufnr = buffer, name = "venue-reader" })[1]
     return active and active.initialized
   end, "native highlighting attachment")
   local price = assert(message:find("123.45", 1, true)) - 1

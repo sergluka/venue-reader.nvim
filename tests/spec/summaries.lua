@@ -8,7 +8,7 @@ local equal = MiniTest.expect.equality
 local tests = MiniTest.new_set({
   hooks = {
     pre_case = function()
-      vim.lsp.config.venue_reader = {} -- luacheck: ignore 122
+      vim.lsp.config["venue-reader"] = {} -- luacheck: ignore 122
     end,
   },
 })

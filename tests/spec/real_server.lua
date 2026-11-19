@@ -5,7 +5,7 @@ local equal = MiniTest.expect.equality
 local tests = MiniTest.new_set({
   hooks = {
     pre_case = function()
-      vim.lsp.config.venue_reader = {} -- luacheck: ignore 122
+      vim.lsp.config["venue-reader"] = {} -- luacheck: ignore 122
     end,
   },
 })
@@ -58,7 +58,7 @@ end
 local function code_actions(capabilities)
   local diagnostics = {}
   local original_select = vim.ui.select
-  vim.lsp.config("venue_reader", {
+  vim.lsp.config("venue-reader", {
     capabilities = capabilities,
     handlers = {
       ["textDocument/publishDiagnostics"] = function(err, result, context)
@@ -74,12 +74,12 @@ local function code_actions(capabilities)
   })
   MiniTest.finally(function()
     rawset(vim.ui, "select", original_select)
-    vim.lsp.enable("venue_reader", false)
-    for _, client in ipairs(vim.lsp.get_clients({ name = "venue_reader" })) do
+    vim.lsp.enable("venue-reader", false)
+    for _, client in ipairs(vim.lsp.get_clients({ name = "venue-reader" })) do
       client:stop(true)
     end
     Lsp.wait(function()
-      return #vim.lsp.get_clients({ name = "venue_reader" }) == 0
+      return #vim.lsp.get_clients({ name = "venue-reader" }) == 0
     end, "code-action client cleanup")
   end)
   local buffer = Lsp.buffer()
@@ -87,7 +87,7 @@ local function code_actions(capabilities)
   vim.api.nvim_set_current_buf(buffer)
   local client
   Lsp.wait(function()
-    client = vim.lsp.get_clients({ name = "venue_reader", bufnr = buffer })[1]
+    client = vim.lsp.get_clients({ name = "venue-reader", bufnr = buffer })[1]
     return client and client.initialized and diagnostics[uri] ~= nil
   end, "code-action document configuration")
   local function current_diagnostics()
@@ -167,7 +167,7 @@ tests["plugin default summaries and native mode transitions use the released ser
   local Plugin = require("venue-reader")
   Plugin.setup({ server = { cmd = { assert(vim.env.VENUE_READER_TEST_SERVER), "--stdio" } } })
   MiniTest.finally(function()
-    vim.lsp.enable("venue_reader", false)
+    vim.lsp.enable("venue-reader", false)
   end)
   local buffer = Lsp.buffer()
   vim.api.nvim_set_current_buf(buffer)
@@ -195,7 +195,7 @@ end
 tests["local server supplies colored cached hidden summaries in one native response"] = function()
   local plugin = require("venue-reader")
   local binary = assert(vim.env.VENUE_READER_TEST_SERVER)
-  vim.lsp.config("venue_reader", {
+  vim.lsp.config("venue-reader", {
     settings = {
       fix = {
         messageSummary = {
@@ -211,8 +211,8 @@ tests["local server supplies colored cached hidden summaries in one native respo
     summary = { mode = "hidden" },
   })
   MiniTest.finally(function()
-    vim.lsp.enable("venue_reader", false)
-    for _, client in ipairs(vim.lsp.get_clients({ name = "venue_reader" })) do
+    vim.lsp.enable("venue-reader", false)
+    for _, client in ipairs(vim.lsp.get_clients({ name = "venue-reader" })) do
       client:stop(true)
     end
   end)
@@ -233,7 +233,7 @@ tests["local server supplies colored cached hidden summaries in one native respo
   local namespace = vim.api.nvim_create_namespace("venue-reader.summary")
   vim.cmd("redraw!")
   equal(vim.api.nvim_buf_get_extmarks(buffer, namespace, 0, -1, {}), {})
-  local client = vim.lsp.get_clients({ name = "venue_reader", bufnr = buffer })[1]
+  local client = vim.lsp.get_clients({ name = "venue-reader", bufnr = buffer })[1]
   local requests = vim.deepcopy(client.requests)
   equal(plugin.current_summary(), "42 Heartbeat [POSS DUP]")
   equal(client.requests, requests)
@@ -252,8 +252,8 @@ tests["symbol picker selects the source field from real server ranges"] = functi
     if picker then
       Symbols.close(picker)
     end
-    vim.lsp.enable("venue_reader", false)
-    for _, client in ipairs(vim.lsp.get_clients({ name = "venue_reader" })) do
+    vim.lsp.enable("venue-reader", false)
+    for _, client in ipairs(vim.lsp.get_clients({ name = "venue-reader" })) do
       client:stop(true)
     end
   end)
@@ -265,7 +265,7 @@ tests["symbol picker selects the source field from real server ranges"] = functi
   local buffer = Lsp.buffer(lines)
   vim.api.nvim_set_current_buf(buffer)
   Lsp.wait(function()
-    local client = vim.lsp.get_clients({ name = "venue_reader", bufnr = buffer })[1]
+    local client = vim.lsp.get_clients({ name = "venue-reader", bufnr = buffer })[1]
     return client and client.initialized
   end, "real symbol client")
   local field_start = assert(line:find("55=", 1, true))

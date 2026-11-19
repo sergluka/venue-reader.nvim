@@ -61,7 +61,7 @@ local function context_root(buffer)
 end
 
 local function selected_client(buffer)
-  for _, client in ipairs(vim.lsp.get_clients({ name = "venue_reader", bufnr = buffer })) do
+  for _, client in ipairs(vim.lsp.get_clients({ name = "venue-reader", bufnr = buffer })) do
     if managed(client) and not client:is_stopped() then
       return client
     end
@@ -104,7 +104,7 @@ local function acquire(buffer, document_required, callback, valid)
     callback(nil, client, current)
     return
   end
-  local config = vim.deepcopy(vim.lsp.config.venue_reader)
+  local config = vim.deepcopy(vim.lsp.config["venue-reader"])
   config.venue_reader_command_only = true
   Native.resolve(buffer, true, function()
     return current() and valid()
@@ -137,10 +137,10 @@ local function acquire(buffer, document_required, callback, valid)
 end
 
 local function activate(buffer)
-  if not eligible(buffer) or not vim.lsp.is_enabled("venue_reader") then
+  if not eligible(buffer) or not vim.lsp.is_enabled("venue-reader") then
     return
   end
-  local config = vim.lsp.config.venue_reader
+  local config = vim.lsp.config["venue-reader"]
   config.root_dir(buffer, function(directory)
     if not eligible(buffer) then
       return
@@ -152,21 +152,21 @@ local function activate(buffer)
 end
 
 function M.start()
-  vim.cmd("lsp enable venue_reader")
+  vim.cmd("lsp enable venue-reader")
 end
 
 function M.stop()
-  vim.cmd("lsp stop venue_reader")
+  vim.cmd("lsp stop venue-reader")
 end
 
 function M.restart()
   Native.prepare(function(err)
     if err then
       notify(err, vim.log.levels.ERROR)
-    elseif #vim.lsp.get_clients({ name = "venue_reader" }) == 0 then
+    elseif #vim.lsp.get_clients({ name = "venue-reader" }) == 0 then
       M.start()
     else
-      vim.cmd("lsp restart venue_reader")
+      vim.cmd("lsp restart venue-reader")
     end
   end)
 end
@@ -175,7 +175,7 @@ function M.status(buffer)
   buffer = buffer or vim.api.nvim_get_current_buf()
   local client = selected_client(buffer)
   return {
-    enabled = vim.lsp.is_enabled("venue_reader"),
+    enabled = vim.lsp.is_enabled("venue-reader"),
     session = client and {
       root = client.config.root_dir,
       argv = client.config.venue_reader_argv,
@@ -216,7 +216,7 @@ function M.summary(mode)
   updated.summary.mode = mode
   local changed = M.setup(updated)
   if not changed then
-    for _, client in ipairs(vim.lsp.get_clients({ name = "venue_reader" })) do
+    for _, client in ipairs(vim.lsp.get_clients({ name = "venue-reader" })) do
       if managed(client) then
         for buffer in pairs(client.attached_buffers) do
           Summaries.attach(client, buffer)
@@ -269,7 +269,7 @@ function M.setup(value)
   assert(vim.fn.has("nvim-0.12") == 1, "venue-reader requires Neovim >=0.12")
   value = value or {}
   assert(value.runtime == nil, "Use server instead of runtime")
-  assert(value.settings == nil, "Use vim.lsp.config('venue_reader', { settings = ... })")
+  assert(value.settings == nil, "Use vim.lsp.config('venue-reader', { settings = ... })")
   local candidate = vim.tbl_deep_extend("force", vim.deepcopy(defaults), value)
   assert(type(candidate.symbols) == "table", "symbols must be a table")
   assert(type(candidate.symbols.enabled) == "boolean", "symbols.enabled must be boolean")
@@ -317,7 +317,7 @@ function M.setup(value)
     return lifetimes[buffer]
   end)
   if mode_changed then
-    for _, client in ipairs(vim.lsp.get_clients({ name = "venue_reader" })) do
+    for _, client in ipairs(vim.lsp.get_clients({ name = "venue-reader" })) do
       if managed(client) then
         for buffer in pairs(client.attached_buffers) do
           Summaries.attach(client, buffer)
@@ -331,7 +331,7 @@ function M.setup(value)
     group = group,
     callback = function(event)
       local client = vim.lsp.get_client_by_id(event.data.client_id)
-      if client and client.name == "venue_reader" and not Native.check(client.config) then
+      if client and client.name == "venue-reader" and not Native.check(client.config) then
         notify(
           "Required adapter hooks were replaced; register structural overrides before setup",
           vim.log.levels.ERROR
@@ -455,7 +455,7 @@ function M.setup(value)
       return commands
     end,
   })
-  vim.lsp.enable("venue_reader")
+  vim.lsp.enable("venue-reader")
   Treesitter.setup(options.treesitter)
   return mode_changed
 end

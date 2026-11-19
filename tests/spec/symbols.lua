@@ -652,8 +652,8 @@ tests["public command opens the managed client stream"] = function()
   end)
   local Plugin = require("venue-reader")
   local root = assert(vim.env.VENUE_READER_TEST_ROOT)
-  local original_config = vim.lsp.config.venue_reader
-  vim.lsp.config.venue_reader = { -- luacheck: ignore 122
+  local original_config = vim.lsp.config["venue-reader"]
+  vim.lsp.config["venue-reader"] = { -- luacheck: ignore 122
     cmd = {
       vim.fn.has("win32") == 1 and "python" or "python3",
       root .. "/tests/support/symbol_server.py",
@@ -667,20 +667,20 @@ tests["public command opens the managed client stream"] = function()
     treesitter = { enabled = false },
   })
   MiniTest.finally(function()
-    vim.lsp.enable("venue_reader", false)
-    for _, client in ipairs(vim.lsp.get_clients({ name = "venue_reader" })) do
+    vim.lsp.enable("venue-reader", false)
+    for _, client in ipairs(vim.lsp.get_clients({ name = "venue-reader" })) do
       client:stop(true)
     end
     Lsp.wait(function()
-      return #vim.lsp.get_clients({ name = "venue_reader" }) == 0
+      return #vim.lsp.get_clients({ name = "venue-reader" }) == 0
     end, "public client cleanup")
-    vim.lsp.config.venue_reader = original_config or {} -- luacheck: ignore 122
+    vim.lsp.config["venue-reader"] = original_config or {} -- luacheck: ignore 122
   end)
   local buffer = Lsp.buffer()
   vim.api.nvim_set_current_buf(buffer)
   local client
   Lsp.wait(function()
-    client = vim.lsp.get_clients({ name = "venue_reader", bufnr = buffer })[1]
+    client = vim.lsp.get_clients({ name = "venue-reader", bufnr = buffer })[1]
     return client and client.initialized
   end, "managed client")
   vim.cmd("VenueReader symbols")

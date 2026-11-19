@@ -23,7 +23,7 @@ Create lua/plugins/venue-reader.lua in your Neovim configuration directory:
         },
         opts = {}, -- adapter options
         config = function(_, opts)
-          vim.lsp.config("venue_reader", { settings = { fix = {} } })
+          vim.lsp.config("venue-reader", { settings = { fix = {} } })
           require("venue-reader").setup(opts)
         end,
       },
@@ -60,6 +60,11 @@ See |venue-reader-usage|.
 
 ==============================================================================
 Configuration                                      *venue-reader-options*
+
+Upgrading from venue_reader ~
+Use venue-reader in vim.lsp.config(), vim.lsp.enable(), vim.lsp.get_clients()
+name filters and :lsp commands. Rename any lsp/venue_reader.lua or
+after/lsp/venue_reader.lua file to venue-reader.lua in the same directory.
 
 Defaults: >lua
     require("venue-reader").setup({
@@ -119,7 +124,7 @@ This deadline is independent of commands.timeout_ms.
 Native server settings ~
 Register server settings with vim.lsp.config, separately from adapter options:
 >lua
-    vim.lsp.config("venue_reader", {
+    vim.lsp.config("venue-reader", {
       settings = { fix = { hover = { enabled = true } } },
     })
     require("venue-reader").setup()
@@ -132,7 +137,7 @@ restoring the client's full settings table.
 
 For a live change, mutate the existing settings table and notify the server:
 >lua
-    for _, client in ipairs(vim.lsp.get_clients({ name = "venue_reader" })) do
+    for _, client in ipairs(vim.lsp.get_clients({ name = "venue-reader" })) do
       client.settings.fix.hover = { enabled = false }
       client:notify("workspace/didChangeConfiguration", { settings = client.settings })
     end
@@ -163,7 +168,7 @@ Native overrides                                  *venue-reader-native-config*
 
 Register native cmd, root_dir, callbacks and handlers before setup:
 >lua
-    vim.lsp.config("venue_reader", {
+    vim.lsp.config("venue-reader", {
       cmd = { "/absolute/path/to/venue-reader", "--stdio" },
       root_dir = function(buffer, on_dir)
         local directory = vim.fs.root(buffer, ".git")

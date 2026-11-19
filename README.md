@@ -34,7 +34,7 @@ return {
       -- plugin settings
     },
     config = function(_, opts)
-      vim.lsp.config("venue_reader", {
+      vim.lsp.config("venue-reader", {
         -- server settings
       })
       require("venue-reader").setup(opts)
@@ -62,7 +62,7 @@ vim.pack.add({
   },
 })
 
-vim.lsp.config("venue_reader", {
+vim.lsp.config("venue-reader", {
   -- server settings
 })
 
@@ -87,11 +87,16 @@ and `:help venue-reader-setup`.
 
 ## Configuration
 
+When upgrading from `venue_reader`, use `venue-reader` in your Neovim LSP
+configuration, client filters and `:lsp` commands. If you have an
+`lsp/venue_reader.lua` or `after/lsp/venue_reader.lua` file, rename it to
+`venue-reader.lua` in the same directory.
+
 Defaults work with `setup()`. Server settings belong to native LSP configuration;
 summary placement belongs to the adapter:
 
 ```lua
-vim.lsp.config("venue_reader", {
+vim.lsp.config("venue-reader", {
   settings = { fix = {
     inlayHints = {
       tagNames = { enabled = true },

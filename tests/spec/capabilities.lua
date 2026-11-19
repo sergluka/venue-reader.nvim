@@ -4,7 +4,7 @@ local equal = MiniTest.expect.equality
 local tests = MiniTest.new_set({
   hooks = {
     pre_case = function()
-      vim.lsp.config.venue_reader = {} -- luacheck: ignore 122
+      vim.lsp.config["venue-reader"] = {} -- luacheck: ignore 122
     end,
   },
 })
@@ -20,7 +20,7 @@ local function session(lines)
     messages[#messages + 1] = tostring(message)
     return original_notify(message, level, options)
   end)
-  vim.lsp.config("venue_reader", {
+  vim.lsp.config("venue-reader", {
     before_init = function(params)
       sent_capabilities = vim.deepcopy(params.capabilities)
     end,
@@ -41,12 +41,12 @@ local function session(lines)
   MiniTest.finally(function()
     rawset(vim, "notify", original_notify)
     rawset(vim.ui, "select", original_select)
-    vim.lsp.enable("venue_reader", false)
-    for _, client in ipairs(vim.lsp.get_clients({ name = "venue_reader" })) do
+    vim.lsp.enable("venue-reader", false)
+    for _, client in ipairs(vim.lsp.get_clients({ name = "venue-reader" })) do
       client:stop(true)
     end
     Lsp.wait(function()
-      return #vim.lsp.get_clients({ name = "venue_reader" }) == 0
+      return #vim.lsp.get_clients({ name = "venue-reader" }) == 0
     end, "capability client cleanup")
     for _, window in ipairs(vim.api.nvim_list_wins()) do
       if
@@ -62,7 +62,7 @@ local function session(lines)
   local uri = vim.uri_from_bufnr(buffer)
   local client
   Lsp.wait(function()
-    client = vim.lsp.get_clients({ name = "venue_reader", bufnr = buffer })[1]
+    client = vim.lsp.get_clients({ name = "venue-reader", bufnr = buffer })[1]
     return client and client.initialized and reports[uri] ~= nil
   end, "capability document configuration")
   local output = vim.env.VENUE_READER_TEST_OUTPUT

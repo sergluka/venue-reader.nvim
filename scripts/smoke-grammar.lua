@@ -23,7 +23,7 @@ local function child(scenario)
         dependencies = scenario == "startup" and { "nvim-treesitter" } or nil,
         config = function()
           require("venue-reader").setup({ server = { auto_install = false } })
-          vim.lsp.enable("venue_reader", false)
+          vim.lsp.enable("venue-reader", false)
         end,
       },
     },

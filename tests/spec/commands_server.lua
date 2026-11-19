@@ -6,7 +6,7 @@ local equal = MiniTest.expect.equality
 local tests = MiniTest.new_set({
   hooks = {
     pre_case = function()
-      vim.lsp.config.venue_reader = {} -- luacheck: ignore 122
+      vim.lsp.config["venue-reader"] = {} -- luacheck: ignore 122
     end,
   },
 })
@@ -33,7 +33,7 @@ local function setup(settings)
   rawset(vim, "notify", function(message)
     messages[#messages + 1] = tostring(message)
   end)
-  vim.lsp.config("venue_reader", {
+  vim.lsp.config("venue-reader", {
     settings = { fix = settings or {} },
     handlers = {
       ["textDocument/publishDiagnostics"] = function(err, result, context)
@@ -49,12 +49,12 @@ local function setup(settings)
     summary = { mode = "off" },
   })
   MiniTest.finally(function()
-    vim.lsp.enable("venue_reader", false)
-    for _, client in ipairs(vim.lsp.get_clients({ name = "venue_reader" })) do
+    vim.lsp.enable("venue-reader", false)
+    for _, client in ipairs(vim.lsp.get_clients({ name = "venue-reader" })) do
       client:stop(true)
     end
     Lsp.wait(function()
-      return #vim.lsp.get_clients({ name = "venue_reader" }) == 0
+      return #vim.lsp.get_clients({ name = "venue-reader" }) == 0
     end, "command session cleanup")
     for _, window in ipairs(vim.api.nvim_list_wins()) do
       if
@@ -75,7 +75,7 @@ local function setup(settings)
       vim.api.nvim_set_current_buf(buffer)
       local client
       Lsp.wait(function()
-        client = vim.lsp.get_clients({ name = "venue_reader", bufnr = buffer })[1]
+        client = vim.lsp.get_clients({ name = "venue-reader", bufnr = buffer })[1]
         return client and ready[client.id .. ":" .. vim.uri_from_bufnr(buffer)]
       end, "committed document configuration")
       return client
@@ -122,13 +122,13 @@ tests["cold reference command starts an unattached reusable native client"] = fu
   equal(#vim.lsp.get_clients({ bufnr = buffer }), 0)
   local session = Plugin.status(buffer).session
   equal(session.buffers, {})
-  local client = vim.lsp.get_clients({ name = "venue_reader" })[1]
+  local client = vim.lsp.get_clients({ name = "venue-reader" })[1]
   equal(client.config.root_dir, vim.fn.getcwd())
   vim.api.nvim_set_current_buf(buffer)
   vim.cmd("VenueReader tag 54 1")
   assert(preview_text(fixture, "markdown", 2):find("Side", 1, true))
-  equal(#vim.lsp.get_clients({ name = "venue_reader" }), 1)
-  equal(vim.lsp.get_clients({ name = "venue_reader" })[1].id, client.id)
+  equal(#vim.lsp.get_clients({ name = "venue-reader" }), 1)
+  equal(vim.lsp.get_clients({ name = "venue-reader" })[1].id, client.id)
 end
 
 tests["cold dictionary choices select an exact identity and attach a later FIX buffer"] = function()
@@ -152,7 +152,7 @@ tests["cold dictionary choices select an exact identity and attach a later FIX b
     return #fixture.messages > 0
   end, "selected session dictionary")
   assert(choices and #choices >= 9, vim.inspect({ choices = choices, messages = fixture.messages }))
-  local active = vim.lsp.get_clients({ name = "venue_reader" })[1]
+  local active = vim.lsp.get_clients({ name = "venue-reader" })[1]
   equal(next(active.attached_buffers), nil)
   equal(vim.api.nvim_get_current_buf(), buffer)
   local document = Lsp.buffer()
@@ -266,15 +266,15 @@ tests["native restart uses latest registered initialization settings"] = functio
   local fixture = setup({ documentLink = { url = "https://example.test/first/{tag}" } })
   local buffer = Lsp.buffer()
   local initial = fixture.attached(buffer)
-  vim.lsp.config("venue_reader", {
+  vim.lsp.config("venue-reader", {
     settings = { fix = { documentLink = { url = "https://example.test/second/{tag}" } } },
   })
   equal(initial.settings.fix.documentLink.url, "https://example.test/first/{tag}")
   Plugin.summary("codelens")
-  vim.cmd("lsp restart venue_reader")
+  vim.cmd("lsp restart venue-reader")
   local replacement
   Lsp.wait(function()
-    replacement = vim.lsp.get_clients({ name = "venue_reader", bufnr = buffer })[1]
+    replacement = vim.lsp.get_clients({ name = "venue-reader", bufnr = buffer })[1]
     return replacement and replacement.id ~= initial.id
   end, "native restart replacement")
   Plugin.tag(35)
@@ -297,7 +297,7 @@ tests["cold explicit global dictionary uses committed initialization settings"] 
     end, 10),
     vim.inspect(fixture.messages)
   )
-  local active = vim.lsp.get_clients({ name = "venue_reader" })[1]
+  local active = vim.lsp.get_clients({ name = "venue-reader" })[1]
   equal(next(active.attached_buffers), nil)
   local buffer = Lsp.buffer()
   equal(fixture.attached(buffer).id, active.id)

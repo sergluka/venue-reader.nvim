@@ -2,7 +2,7 @@ local root = assert(vim.env.VENUE_READER_TEST_ROOT)
 vim.opt.runtimepath:prepend(root)
 local Plugin = require("venue-reader")
 assert(#vim.api.nvim_get_runtime_file("lua/snacks/init.lua", false) == 0)
-vim.lsp.config("venue_reader", {
+vim.lsp.config("venue-reader", {
   cmd = {
     vim.fn.has("win32") == 1 and "python" or "python3",
     root .. "/tests/support/symbol_server.py",
@@ -36,7 +36,7 @@ vim.api.nvim_set_option_value("filetype", "fix", { buf = 0 })
 local buffer = vim.api.nvim_get_current_buf()
 local client
 assert(vim.wait(5000, function()
-  client = vim.lsp.get_clients({ name = "venue_reader", bufnr = buffer })[1]
+  client = vim.lsp.get_clients({ name = "venue-reader", bufnr = buffer })[1]
   return client and client.initialized
 end, 10))
 local result
@@ -61,5 +61,5 @@ settings.symbols.enabled = true
 Plugin.setup(settings)
 assert(vim.tbl_contains(vim.fn.getcompletion("VenueReader ", "cmdline"), "symbols"))
 assert(not package.loaded.snacks and not package.loaded["venue-reader.symbols"])
-vim.lsp.enable("venue_reader", false)
+vim.lsp.enable("venue-reader", false)
 client:stop(true)

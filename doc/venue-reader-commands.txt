@@ -5,8 +5,8 @@ Commands                              *:VenueReader* *venue-reader-commands*
 Index: |venue-reader|    Configuration: |venue-reader-options|
 Wiki: https://github.com/sergluka/venue-reader.nvim/wiki/Commands
 
-:VenueReader start              Native :lsp enable venue_reader.
-:VenueReader stop               Native :lsp stop venue_reader.
+:VenueReader start              Native :lsp enable venue-reader.
+:VenueReader stop               Native :lsp stop venue-reader.
 :VenueReader restart            Native restart/enable of configured transport.
 :VenueReader status             Show session/server/annotation/grammar state.
 :VenueReader install server     Explicit server discovery/installation retry.
@@ -26,10 +26,10 @@ optional values remain strings. Ex arguments follow normal space escaping.
 ==============================================================================
 Lifecycle                                             *venue-reader-lifecycle*
 
-Helpers use native scope: all clients named venue_reader, including different
+Helpers use native scope: all clients named venue-reader, including different
 roots. Native restart preserves attached buffers. Stop terminates current
-clients; :lsp disable venue_reader prevents future automatic attachment.
-:lsp enable venue_reader resumes attachment.
+clients; :lsp disable venue-reader prevents future automatic attachment.
+:lsp enable venue-reader resumes attachment.
 
 After a crash, native Neovim reports the exit; enable attaches eligible buffers
 again. There is no separate plugin suppression or automatic recovery loop.

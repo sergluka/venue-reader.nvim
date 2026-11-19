@@ -35,8 +35,8 @@ local function fixture(mode, lines)
   local original_rpc, original_system = vim.lsp.rpc.start, vim.system
   local transports = {}
   MiniTest.finally(function()
-    vim.lsp.enable("venue_reader", false)
-    for _, client in ipairs(vim.lsp.get_clients({ name = "venue_reader" })) do
+    vim.lsp.enable("venue-reader", false)
+    for _, client in ipairs(vim.lsp.get_clients({ name = "venue-reader" })) do
       client:stop(true)
     end
     for _, transport in ipairs(transports) do
@@ -86,7 +86,7 @@ local function fixture(mode, lines)
   vim.api.nvim_set_current_buf(buffer)
   local client
   Lsp.wait(function()
-    client = vim.lsp.get_clients({ bufnr = buffer, name = "venue_reader" })[1]
+    client = vim.lsp.get_clients({ bufnr = buffer, name = "venue-reader" })[1]
     return client and client.initialized
   end, "summary attachment")
   return { buffer = buffer, client = client, transport = transports[1], transports = transports }

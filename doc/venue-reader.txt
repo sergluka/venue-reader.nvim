@@ -88,8 +88,8 @@ The guard does not detect other FIX plugins or independently configured clients.
 No LSP attachment ~
 Check filetype=fix, normal buffer type, an explicit buffer name and native LSP
 enablement. Run :VenueReader status and :checkhealth venue-reader. A buffer can
-have a name without a saved file. :lsp enable venue_reader enables attachment;
-:lsp disable venue_reader prevents future automatic attachment.
+have a name without a saved file. :lsp enable venue-reader enables attachment;
+:lsp disable venue-reader prevents future automatic attachment.
 
 Stale code actions ~
 An action requested for the initial state of a document can apply stale edits

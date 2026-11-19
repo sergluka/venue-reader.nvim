@@ -132,7 +132,7 @@ function M.acquisition()
 end
 
 function M.setup(options, eligible, default_root, lifetime)
-  local config = vim.lsp.config.venue_reader or {}
+  local config = vim.lsp.config["venue-reader"] or {}
   if config.venue_reader_owner == owner then
     assert(M.check(config), "Register structural LSP overrides before venue-reader.setup()")
   else
@@ -222,7 +222,7 @@ function M.setup(options, eligible, default_root, lifetime)
   end
   registered.root_dir = function(buffer, on_dir)
     M.resolve(buffer, false, function()
-      return context == active and vim.lsp.is_enabled("venue_reader")
+      return context == active and vim.lsp.is_enabled("venue-reader")
     end, function(err, directory)
       if err then
         notify(err)
@@ -233,7 +233,7 @@ function M.setup(options, eligible, default_root, lifetime)
   end
   registered.cmd = function(dispatchers, client_config)
     assert(
-      client_config.venue_reader_command_only or vim.lsp.is_enabled("venue_reader"),
+      client_config.venue_reader_command_only or vim.lsp.is_enabled("venue-reader"),
       "Venue Reader was disabled during startup"
     )
     local launch_context = client_config.venue_reader_started and active or context
@@ -241,7 +241,7 @@ function M.setup(options, eligible, default_root, lifetime)
     assert(M.check(client_config), "Register structural LSP overrides before venue-reader.setup()")
     local settings = client_config.settings
     -- client_config is a copy taken at enable time or the previous client's config on restart.
-    local result = prepared((vim.lsp.config.venue_reader or {}).settings, summary)
+    local result = prepared((vim.lsp.config["venue-reader"] or {}).settings, summary)
     for key in pairs(settings) do
       settings[key] = nil
     end
@@ -281,8 +281,8 @@ function M.setup(options, eligible, default_root, lifetime)
     on_init = registered.on_init,
     on_exit = registered.on_exit,
   }
-  vim.lsp.config("venue_reader", registered)
-  for _, client in ipairs(vim.lsp.get_clients({ name = "venue_reader", _uninitialized = true })) do
+  vim.lsp.config("venue-reader", registered)
+  for _, client in ipairs(vim.lsp.get_clients({ name = "venue-reader", _uninitialized = true })) do
     if M.managed(client) then
       update(client)
     end

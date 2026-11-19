@@ -39,7 +39,7 @@ end
 function M.ready(buffer)
   local client
   M.wait(function()
-    client = vim.lsp.get_clients({ bufnr = buffer, name = "venue_reader" })[1]
+    client = vim.lsp.get_clients({ bufnr = buffer, name = "venue-reader" })[1]
     return client and reports[client.id .. ":" .. vim.uri_from_bufnr(buffer)]
   end, "committed FIX document")
   return client

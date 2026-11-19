@@ -83,7 +83,7 @@ Native field hints                                  *venue-reader-field-hints*
 
 Neovim renders tag names, enum labels and group paths as native inlay hints.
 Configure server output with: >lua
-    vim.lsp.config("venue_reader", {
+    vim.lsp.config("venue-reader", {
       settings = { fix = {
         inlayHints = {
           tagNames = { enabled = true },

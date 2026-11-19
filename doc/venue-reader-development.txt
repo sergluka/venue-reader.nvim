@@ -109,7 +109,7 @@ overrides. Keep your usual checkout and binary as fallbacks. For lazy.nvim:
         },
       },
       config = function(_, opts)
-        vim.lsp.config("venue_reader", { settings = { fix = {} } })
+        vim.lsp.config("venue-reader", { settings = { fix = {} } })
         require("venue-reader").setup(opts)
       end,
     }

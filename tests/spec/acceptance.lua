@@ -53,7 +53,7 @@ tests["published server combined naming splits modes yank rename and restart"] =
     local plugin = require("venue-reader")
     local message = "8=FIX.4.4|35=0|58=Привет 東京|"
     local first = fixture.buffer({ message })
-    assert(#vim.lsp.get_clients({ bufnr = first, name = "venue_reader" }) == 0)
+    assert(#vim.lsp.get_clients({ bufnr = first, name = "venue-reader" }) == 0)
     vim.cmd("file " .. vim.fn.fnameescape(vim.fn.tempname() .. ".fix"))
     local initial = fixture.ready(first)
     local first_name = vim.api.nvim_buf_get_name(first)
@@ -90,7 +90,7 @@ tests["published server combined naming splits modes yank rename and restart"] =
     assert(fixture.ready(first).id == initial.id)
     plugin.restart()
     fixture.wait(function()
-      local current = vim.lsp.get_clients({ bufnr = first, name = "venue_reader" })[1]
+      local current = vim.lsp.get_clients({ bufnr = first, name = "venue-reader" })[1]
       return current and current.id ~= initial.id
     end, "native restarted client")
     local replacement = fixture.ready(first)
