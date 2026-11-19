@@ -191,12 +191,15 @@ https://github.com/sergluka/venue-reader.nvim/blob/master/tests/ACCEPTANCE.md
 
 Documentation checks ~
 
-Keep venue-reader.nvim, venue-reader.nvim.wiki, venue-reader and venue-reader.wiki
-checkouts next to each other. From the plugin checkout, validate links, anchors,
-help tags and Lua examples:
+From the plugin wiki checkout, validate links, anchors, help tags and Lua examples:
 >sh
-    nvim --headless -u NONE -i NONE -l ../venue-reader.nvim.wiki/tools/check_docs.lua
+    nvim --headless -u NONE -i NONE -l tools/check_docs.lua
 <
+Adjacent checkouts are detected automatically. For other layouts, set
+VENUE_READER_DOC_PLUGIN, VENUE_READER_DOC_SERVER, VENUE_READER_DOC_WIKI
+(server wiki) or VENUE_READER_DOC_PLUGIN_WIKI to the relevant checkout.
+In the maintainer workspace, missing feature checkouts are resolved from repos/.
+
 This check needs no network or server acquisition. Keep source-backed claims,
 examples and limits aligned across README, wiki and native help. Help uses tags,
 text tables and plain examples; colored illustrations belong in the wiki.
