@@ -39,7 +39,6 @@ local success, result = pcall(function()
   dependencies.verify_tests()
   local environment = vim.fn.environ()
   environment.VENUE_READER_TEST_ROOT = root
-  environment.NVIM_LOG_FILE = temporary .. "/nvim.log"
   for _, name in ipairs({
     "NVIM",
     "NVIM_LISTEN_ADDRESS",
@@ -96,6 +95,11 @@ local success, result = pcall(function()
       environment[name] = directory .. "/" .. name
       vim.fn.mkdir(environment[name], "p")
     end
+    environment.NVIM_LOG_FILE = directory .. "/nvim.log"
+    local report = directory .. "/cases.json"
+    if output then
+      environment.VENUE_READER_CASE_REPORT = report
+    end
     local runner = suite == "native_only" and "/tests/native_only.lua" or "/tests/run.lua"
     local command =
       { vim.v.progpath, "--headless", "-u", "NONE", "-i", "NONE", "-l", root .. runner }
@@ -109,9 +113,25 @@ local success, result = pcall(function()
     io.stdout:write(child.stdout or "")
     io.stderr:write(child.stderr or "")
     local duration = (vim.uv.hrtime() - suite_started) / 1e9
-    outcomes[#outcomes + 1] = { suite = suite, code = child.code, duration = duration }
+    local outcome = { suite = suite, code = child.code, duration = duration }
+    outcomes[#outcomes + 1] = outcome
     io.stdout:write(("Suite duration: %.3f seconds; exit: %d\n"):format(duration, child.code))
     if output then
+      if vim.fn.filereadable(report) == 1 then
+        outcome.cases = vim.json.decode(table.concat(vim.fn.readfile(report)))
+      end
+      if not outcome.cases or #outcome.cases == 0 then
+        io.stderr:write("No scenario results for " .. suite .. "\n")
+        exit_code = 1
+      end
+      if child.code ~= 0 then
+        local logs = output .. "/" .. suite .. "-logs"
+        for _, log in ipairs(vim.fn.globpath(directory, "**/*.log", false, true)) do
+          local target = logs .. "/" .. vim.fs.basename(log)
+          vim.fn.mkdir(logs, "p")
+          assert(vim.uv.fs_copyfile(log, target))
+        end
+      end
       vim.fn.writefile(
         vim.split((child.stdout or "") .. (child.stderr or ""), "\n"),
         output .. "/" .. suite .. ".log"

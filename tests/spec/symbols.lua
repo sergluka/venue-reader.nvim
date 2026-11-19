@@ -655,7 +655,7 @@ tests["public command opens the managed client stream"] = function()
   local original_config = vim.lsp.config.venue_reader
   vim.lsp.config.venue_reader = { -- luacheck: ignore 122
     cmd = {
-      "python3",
+      vim.fn.has("win32") == 1 and "python" or "python3",
       root .. "/tests/support/symbol_server.py",
       require("venue-reader.release").series .. ".0",
     },

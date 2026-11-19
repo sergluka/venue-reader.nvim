@@ -3,7 +3,12 @@
     "nvim": "0.12.5",
     "stylua": "2.3.0",
     "luacheck": "1.2.0",
-    "tree_sitter": "0.26.11"
+    "tree_sitter": "0.26.11",
+    "minimum_nvim": "0.12.0",
+    "ruff": "0.17.2",
+    "actionlint": "1.7.12",
+    "shellcheck": "0.11.0",
+    "python": "3.13.17"
   },
   "mini_test": {
     "repository": "https://github.com/nvim-mini/mini.test.git",
@@ -21,5 +26,40 @@
   "snacks": {
     "repository": "https://github.com/folke/snacks.nvim.git",
     "commit": "882c996cf28183f4d63640de0b4c02ec886d01f2"
+  },
+  "tool_assets": {
+    "nvim": {
+      "0.12.0": {
+        "nvim-linux-x86_64.tar.gz": "160b69125defb16e60b283b69be112fd4850d67ac8f9a752328c20ad43ec34af"
+      },
+      "0.12.5": {
+        "nvim-linux-x86_64.tar.gz": "bce0f56eda1f1b1db6eee8f4133d7a38813ea07933837dd1777411ca384c6875",
+        "nvim-macos-arm64.tar.gz": "65fb000099e47ca1b762584c484cc833f40e30851a0ec450d4174e16317c1f9b",
+        "nvim-macos-x86_64.tar.gz": "81f4518622cb059b450ee2e498c6a1082a222f6bd89589de5bbcf0c6a68aa3fd",
+        "nvim-win64.zip": "de8625ba8cf65ebf40eb80a388ba1ec8e9c15b30218821e2c639119b05920de1"
+      }
+    },
+    "tree_sitter": {
+      "tree-sitter-linux-x64.gz": "8dac3c89bb632eece700ea7a261ad963b251f2228c4aef3b58458ebea8dbe4eb",
+      "tree-sitter-macos-arm64.gz": "0bb646b2a29007233bd44855f00d0b8e238084d5b442f097d841b476318c2c90",
+      "tree-sitter-macos-x64.gz": "0da547d2622ba1583e4c748bb44db5b79af56462da41acf377b9fdc2eb2cd49f",
+      "tree-sitter-windows-x64.gz": "9d836a8c405ed50cea6b3410905576de3bff2b42ca12edc1e825ec86fe918a5f"
+    }
+  },
+  "lazy": {
+    "repository": "https://github.com/folke/lazy.nvim.git",
+    "commit": "306a05526ada86a7b30af95c5cc81ffba93fef97"
+  },
+  "lint_sha256": {
+    "stylua": "4c06b5963b8e832b51ebafc8051bab90ee3322e51d2f5ea59f4eacae78ce8bfc",
+    "luacheck": "d68da17fca0697d9e2fb04201f3884abd259fa558b3a449bccaed47f1390defc",
+    "ruff": "7b2e6a6e132ecf7b5fe726163b186d5d209befe93bb25f83767b2d97fbdf14e5",
+    "actionlint": "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8",
+    "shellcheck": "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
+  },
+  "docs": {
+    "venue-reader": "8960efa95bed4070a8194eaa658a9a6503785d36",
+    "venue-reader.wiki": "573cb6d2cc52413a293a5d54d67cda2ef9b27239",
+    "venue-reader.nvim.wiki": "d6b9b6b5df69cffebe936d96cc00d2e17b3c25e9"
   }
 }

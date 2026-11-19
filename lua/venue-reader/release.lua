@@ -10,4 +10,16 @@ release.base_url = ("https://github.com/%s/releases/download/v%s/"):format(
   release.version
 )
 
+function release.platform()
+  local system = vim.uv.os_uname()
+  local architecture = ({ arm64 = "aarch64", AMD64 = "x86_64" })[system.machine] or system.machine
+  local suffix = ({
+    Linux = "unknown-linux-gnu",
+    Darwin = "apple-darwin",
+    Windows_NT = "pc-windows-msvc",
+  })[system.sysname]
+  local target = architecture .. "-" .. (suffix or "unsupported")
+  return target, system.sysname
+end
+
 return release

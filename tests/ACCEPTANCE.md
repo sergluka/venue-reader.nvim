@@ -81,35 +81,25 @@ source edits, and UTF-16 positions. The real-server suite also opens the public
 picker from tag and value positions near the end of a 300-line synthetic file
 and verifies that the corresponding field is selected.
 
-## Native macOS checks — NOT RUN
+## Native release acceptance
 
-These are placeholders for execution on native macOS, separately for each claimed
-architecture. Linux test results and archive checksums do not establish this row.
-Uncomment and run only on the target host with the development tools installed.
+The integration matrix runs on Linux x86_64, macOS x86_64, macOS arm64 and
+Windows x86_64. Each release job prepares the archive for its host, runs the
+test suites and opens a named FIX buffer in a fresh profile. The managed server
+must match the prepared release binary and attach without a preinstalled FIX
+parser. Installer fixtures also exercise rejection and cleanup after failures.
+
+To reproduce a release job, use a native shell with Neovim and the pinned tools
+on PATH. Keep any external Venue Reader executable off PATH for the install check.
+Pass the host triple from the release manifest in the final command.
 
 ```sh
-# TODO: record macOS version, architecture, Neovim version and artifact digests.
-# nvim --headless -u NONE -i NONE -l scripts/prepare.lua
-# nvim --headless -u NONE -i NONE -l scripts/test.lua
-# TODO: verify fresh managed-server installation in isolated XDG directories.
-# TODO: record front/above/CodeLens, decoded yank and Unicode smoke evidence.
-# TODO: verify LSP with the optional grammar absent or failing to install.
+nvim --headless -u NONE -i NONE -l scripts/prepare.lua
+nvim --headless -u NONE -i NONE -l scripts/test.lua
+nvim --headless -u NONE -i NONE -l scripts/ci-install.lua <target-triple>
 ```
 
-## Native Windows checks — NOT RUN
-
-These are placeholders for native Windows execution; they are not enabled tests
-or a support claim. Use PowerShell with the documented tools available on PATH.
-
-```powershell
-# TODO: record Windows version, architecture, Neovim version and artifact digests.
-# nvim --headless -u NONE -i NONE -l scripts/prepare.lua
-# nvim --headless -u NONE -i NONE -l scripts/test.lua
-# TODO: verify fresh managed-server installation in isolated application directories.
-# TODO: record front/above/CodeLens, decoded yank and Unicode smoke evidence.
-# TODO: verify LSP with the optional grammar absent or failing to install.
-```
-
-For either platform, keep the native smoke isolated from personal configuration.
-Record failed or blocked checks explicitly, including missing toolchains; do not
-turn a placeholder into a pass. A parser build failure must leave LSP usable.
+In GitHub Actions, open the integration job for the target and download its
+evidence artifact. It includes suite and scenario results, capability snapshots
+and fresh-install evidence. Source-build jobs on Linux run the suites against a
+binary built at the revision in the release manifest.

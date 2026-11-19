@@ -182,11 +182,10 @@ It does not load personal configuration or modify personal parsers.
 ==============================================================================
 Acceptance                                             *venue-reader-acceptance*
 
-Local validation covers Linux x86_64 with Neovim 0.12.0 and 0.12.5. The manifest
-also identifies macOS/Windows artifacts. Native checks on those platforms remain
-outstanding; placeholders are explicitly unexecuted, not successful evidence.
+The release matrix exercises installation and LSP attachment on native runners.
+Linux also runs the full suite against a source build of the pinned server.
 
-Acceptance commands and platform placeholders:
+Acceptance commands and supported targets:
 https://github.com/sergluka/venue-reader.nvim/blob/master/tests/ACCEPTANCE.md
 
 Documentation checks ~

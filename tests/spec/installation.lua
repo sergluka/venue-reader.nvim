@@ -4,6 +4,10 @@ local tests = MiniTest.new_set()
 
 local root = assert(vim.env.VENUE_READER_TEST_ROOT)
 local manifest = require("venue-reader.release")
+local target, system = manifest.platform()
+local downloader = system == "Windows_NT" and "curl.exe" or "curl"
+local extractor = system == "Windows_NT" and "tar.exe" or "tar"
+local binary = system == "Windows_NT" and "venue-reader.exe" or "venue-reader"
 local equal = MiniTest.expect.equality
 local major, minor, patch = (manifest.series .. ".0"):match("^(%d+)%.(%d+)%.(%d+)$")
 local compatible_patch = manifest.series .. "." .. (tonumber(patch) + 1)
@@ -21,7 +25,7 @@ elseif tonumber(major) > 0 then
 end
 
 local function isolated(handler)
-  local directory = vim.fn.tempname()
+  local directory = vim.fs.normalize(vim.fn.tempname())
   vim.fn.mkdir(directory, "p")
   local original_system, original_stdpath, original_exepath =
     vim.system, vim.fn.stdpath, vim.fn.exepath
@@ -135,9 +139,11 @@ tests["manual mode with no installed binary never starts a subprocess"] = functi
 end
 
 tests["incompatible release pin is rejected before download"] = function()
-  if manifest.pinned then
-    MiniTest.skip("Pinned release matches supported series")
-  end
+  local pinned = manifest.pinned
+  MiniTest.finally(function()
+    manifest.pinned = pinned
+  end)
+  manifest.pinned = false
   local server = isolated(function()
     error("No subprocess expected")
   end)
@@ -150,15 +156,11 @@ local function archive_fixture(bad_hash, failure)
       "Compatible release is not pinned; archive installation verification pending release"
     )
   end
-  local system = vim.uv.os_uname()
-  if system.sysname ~= "Linux" or system.machine ~= "x86_64" then
-    MiniTest.skip("Local released archive fixture requires Linux x86_64")
+  local artifact = manifest.artifacts[target]
+  if not artifact then
+    MiniTest.skip("No released archive for " .. target)
   end
-  local archive = root
-    .. "/.test-deps/"
-    .. manifest.version
-    .. "/x86_64-unknown-linux-gnu/"
-    .. manifest.artifacts["x86_64-unknown-linux-gnu"].archive
+  local archive = vim.fs.joinpath(root, ".test-deps", manifest.version, target, artifact.archive)
   assert(vim.fn.filereadable(archive) == 1, "Run make prepare for installation archive tests")
   local downloads = 0
   local server, directory = isolated(function(command)
@@ -168,12 +170,15 @@ local function archive_fixture(bad_hash, failure)
         return replacement, response
       end
     end
-    if command[1] == "curl" then
+    if command[1] == downloader then
       downloads = downloads + 1
       local output = assert(vim.fn.index(command, "--output")) + 2
-      return { "cp", archive, command[output] }
-    elseif bad_hash and command[1] == "sha256sum" then
-      return nil, string.rep("0", 64) .. "  archive\n"
+      if bad_hash then
+        vim.fn.writefile({ "invalid archive" }, command[output])
+      else
+        assert(vim.uv.fs_copyfile(archive, command[output]))
+      end
+      return nil, ""
     end
   end)
   return server, directory, function()
@@ -208,7 +213,7 @@ tests["checksum failure publishes no runnable install and cleans staging"] = fun
   local result = resolve(server, {})
   assert(result.error:find("SHA-256 mismatch", 1, true))
   equal(downloads(), 1)
-  equal(vim.fn.glob(directory .. "/venue-reader/*/*/venue-reader"), "")
+  equal(vim.fn.glob(directory .. "/venue-reader/*/*/" .. binary), "")
   equal(vim.fn.glob(directory .. "/venue-reader/*/*.tmp-*"), "")
   assert(resolve(server, {}).error)
   equal(downloads(), 1)
@@ -218,18 +223,18 @@ for _, stage in ipairs({ "download", "inventory", "links", "extraction" }) do
   tests[stage .. " failure publishes nothing and removes staging"] = function()
     local server, directory = archive_fixture(false, function(command)
       if
-        stage == "download" and command[1] == "curl"
-        or stage == "extraction" and command[1] == "tar" and command[2] == "-xf"
+        stage == "download" and command[1] == downloader
+        or stage == "extraction" and command[1] == extractor and command[2] == "-xf"
       then
-        return { "false" }
-      elseif stage == "inventory" and command[1] == "tar" and command[2] == "-tf" then
+        return { vim.v.progpath, "--headless", "-u", "NONE", "-i", "NONE", "-c", "cquit 1" }
+      elseif stage == "inventory" and command[1] == extractor and command[2] == "-tf" then
         return nil, "../escape\n"
-      elseif stage == "links" and command[1] == "tar" and command[2] == "-tvf" then
+      elseif stage == "links" and command[1] == extractor and command[2] == "-tvf" then
         return nil, "lrwxrwxrwx link -> /outside\n"
       end
     end)
     assert(resolve(server, {}).error)
-    equal(vim.fn.glob(directory .. "/venue-reader/*/*/venue-reader"), "")
+    equal(vim.fn.glob(directory .. "/venue-reader/*/*/" .. binary), "")
     equal(vim.fn.glob(directory .. "/venue-reader/*/*.tmp-*"), "")
   end
 end
@@ -270,7 +275,7 @@ tests["publication loser reuses winner and preserves its files"] = function()
   equal(result.error, nil)
   equal(publications, 1)
   local installed = vim.fs.dirname(result.argv[1])
-  equal(vim.fn.filereadable(installed .. "/venue-reader"), 1)
+  equal(vim.fn.filereadable(installed .. "/" .. binary), 1)
   equal(vim.fn.readfile(installed .. "/winner"), { "another process owns this publication" })
   equal(vim.fn.glob(directory .. "/venue-reader/*/*.tmp-*"), "")
 end

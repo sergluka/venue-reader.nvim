@@ -232,4 +232,7 @@ vim.cmd("qa!")
 
 
 if __name__ == "__main__":
-    unittest.main()
+    result = unittest.main(exit=False).result
+    if os.environ.get("CI") == "true" and (result.testsRun == 0 or result.skipped):
+        raise SystemExit("CI must execute every launcher test")
+    raise SystemExit(0 if result.wasSuccessful() else 1)

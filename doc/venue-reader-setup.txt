@@ -217,8 +217,7 @@ Automatic installation tools ~
 
 Missing tools or unsupported targets report a manual installation path.
 Linux automatic artifacts require x86_64/glibc >=2.35. The manifest also lists
-macOS x86_64/aarch64 and Windows x86_64 artifacts. Native validation on macOS and
-Windows remains outstanding; listed artifacts are not native test evidence.
+macOS x86_64/aarch64 and Windows x86_64 artifacts.
 
 Pinned release metadata:
 https://github.com/sergluka/venue-reader.nvim/blob/master/lua/venue-reader/release.json

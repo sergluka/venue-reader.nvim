@@ -5,8 +5,12 @@ local function wait(predicate, description)
   assert(vim.wait(5000, predicate, 10), "Timed out: " .. description)
 end
 
+local scenarios = {}
 local function check(name, callback)
+  local scenario = { name = name, status = "failed" }
+  table.insert(scenarios, scenario)
   callback()
+  scenario.status = "passed"
   io.stdout:write("PASS native-only: " .. name .. "\n")
 end
 
@@ -318,6 +322,9 @@ if client then
   vim.wait(5000, function()
     return vim.lsp.get_client_by_id(client.id) == nil
   end, 10)
+end
+if vim.env.VENUE_READER_CASE_REPORT then
+  vim.fn.writefile({ vim.json.encode(scenarios) }, vim.env.VENUE_READER_CASE_REPORT)
 end
 if not success then
   io.stderr:write(failure .. "\n")

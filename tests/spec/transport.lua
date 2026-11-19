@@ -95,7 +95,8 @@ tests["pending edits are sent before the next document request"] = function()
     { transport.events[#transport.events - 1], transport.events[#transport.events] }
   )
   local change = assert(transport:notification("textDocument/didChange"))
-  equal("8=FIX.4.4|35=1|\n", change.contentChanges[1].text)
+  local eol = vim.bo[buffer].fileformat == "dos" and "\r\n" or "\n"
+  equal("8=FIX.4.4|35=1|" .. eol, change.contentChanges[1].text)
 end
 
 tests["startup failure exits before initialization"] = function()

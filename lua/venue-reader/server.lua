@@ -59,18 +59,6 @@ local function probe(binary, callback)
   end, 5000)
 end
 
-local function platform()
-  local system = vim.uv.os_uname()
-  local architecture = ({ arm64 = "aarch64", AMD64 = "x86_64" })[system.machine] or system.machine
-  local suffix = ({
-    Linux = "unknown-linux-gnu",
-    Darwin = "apple-darwin",
-    Windows_NT = "pc-windows-msvc",
-  })[system.sysname]
-  local target = architecture .. "-" .. (suffix or "unsupported")
-  return target, system.sysname
-end
-
 local function install(target, system, directory, callback)
   local artifact = manifest.artifacts[target]
   if not artifact then
@@ -288,7 +276,7 @@ function Server.resolve(options, callback, retry)
     end)
     return
   end
-  local target, system = platform()
+  local target, system = manifest.platform()
   local directory =
     vim.fs.joinpath(vim.fn.stdpath("data"), "venue-reader", manifest.version, target)
   local binary = system == "Windows_NT" and "venue-reader.exe" or "venue-reader"

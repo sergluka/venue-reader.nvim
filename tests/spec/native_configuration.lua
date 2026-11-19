@@ -4,6 +4,7 @@ local Transport = require("tests.support.transport")
 local Plugin = require("venue-reader")
 local release = require("venue-reader.release")
 
+local custom_root = vim.fs.normalize(vim.fn.tempname())
 local equal = MiniTest.expect.equality
 
 local tests = MiniTest.new_set({
@@ -153,7 +154,7 @@ end
 tests["native callbacks preserve initialization options and capabilities"] = function()
   local calls = { before = 0, initialized = 0, attached = 0, exited = 0 }
   local context = fixture({
-    root_dir = "/tmp/native-custom-root",
+    root_dir = custom_root,
     init_options = { unrelated = { keep = true } },
     capabilities = { experimental = { unrelated = true } },
     before_init = function(_, config)
@@ -176,7 +177,7 @@ tests["native callbacks preserve initialization options and capabilities"] = fun
   local buffer = Lsp.buffer()
   local transport = transport_for(context)
   local params = transport.pending[1].params
-  equal(params.rootUri, "file:///tmp/native-custom-root")
+  equal(params.rootUri, vim.uri_from_fname(custom_root))
   equal(params.initializationOptions.unrelated, { keep = true })
   equal(params.initializationOptions.fix.limits.rangeLines, 29)
   equal(params.capabilities.experimental.unrelated, true)
@@ -233,7 +234,7 @@ tests["a silent root resolver times out and its late callback cannot launch a cl
   Lsp.wait(function()
     return table.concat(context.messages, "\n"):find("timed out", 1, true) ~= nil
   end, "root resolver timeout")
-  on_dir("/tmp/late-root")
+  on_dir(vim.fn.tempname())
   vim.wait(60)
   equal(#context.transports, 0)
 end
@@ -251,11 +252,12 @@ tests["asynchronous native root controls command-only startup"] = function()
     return on_dir ~= nil
   end, "custom command root")
   equal(#context.transports, 0)
-  on_dir("/tmp/selected-command-root")
+  local selected_root = vim.fs.normalize(vim.fn.tempname())
+  on_dir(selected_root)
   local transport = transport_for(context)
-  equal(transport.pending[1].params.rootUri, "file:///tmp/selected-command-root")
+  equal(transport.pending[1].params.rootUri, vim.uri_from_fname(selected_root))
   local client = initialized(context)
-  equal(Plugin.status().session.root, "/tmp/selected-command-root")
+  equal(Plugin.status().session.root, selected_root)
   equal(next(client.attached_buffers), nil)
 end
 
@@ -296,9 +298,9 @@ tests["selected summary mode overrides registered channels across restart"] = fu
 end
 
 for kind, root_dir in pairs({
-  string = "/tmp/native-custom-root",
+  string = custom_root,
   ["function"] = function(_, on_dir)
-    on_dir("/tmp/native-custom-root")
+    on_dir(custom_root)
   end,
 }) do
   tests["custom " .. kind .. " root does not attach an unnamed FIX buffer"] = function()
@@ -443,9 +445,10 @@ tests["native argv bypasses discovery and preserves native command environment"]
       transport:exit(0, 0)
     end
   end)
+  local working_directory = vim.fs.normalize(vim.uv.cwd())
   local context = fixture({
     cmd = { "native-wrapper", "--stdio" },
-    cmd_cwd = "/tmp",
+    cmd_cwd = working_directory,
     cmd_env = { NATIVE_CONFIGURATION_TEST = "yes" },
   })
   Lsp.buffer()
@@ -453,7 +456,7 @@ tests["native argv bypasses discovery and preserves native command environment"]
     return observed ~= nil
   end, "native argv invocation")
   equal(observed.command, { "native-wrapper", "--stdio" })
-  equal(observed.options.cwd, "/tmp")
+  equal(observed.options.cwd, working_directory)
   equal(observed.options.env.NATIVE_CONFIGURATION_TEST, "yes")
   context.transports[1] = transport
   local client = initialized(context)
@@ -530,7 +533,7 @@ local function runtime_fixture()
   end)
   vim.lsp.config("venue_reader", {
     root_dir = function(buffer, on_dir)
-      on_dir("/tmp/runtime-root-" .. buffer)
+      on_dir(vim.fs.joinpath(vim.uv.cwd(), "runtime-root-" .. buffer))
     end,
   })
   local function setup(binary)

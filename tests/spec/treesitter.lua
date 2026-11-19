@@ -103,7 +103,7 @@ tests["installation discovers a newly created site already on runtimepath"] = fu
     vim.opt.runtimepath:prepend(directory)
     return directory
   end)
-  assert(site:find(assert(vim.env.XDG_DATA_HOME), 1, true) == 1)
+  assert(vim.fs.relpath(assert(vim.env.XDG_DATA_HOME), site), "Unexpected test site: " .. site)
   MiniTest.finally(function()
     process.stop()
     vim.fn.delete(site, "rf")

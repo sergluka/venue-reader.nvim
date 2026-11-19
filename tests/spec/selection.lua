@@ -244,7 +244,7 @@ tests["captured state invalidates on source URI or geometry options changes"] = 
   equal(process.lua_get("Selection.valid(saved)"), false)
   process.lua_func(function()
     _G.capture()
-    vim.api.nvim_buf_set_name(0, "/tmp/selection-renamed.fix")
+    vim.api.nvim_buf_set_name(0, vim.fn.tempname() .. ".fix")
   end)
   equal(process.lua_get("Selection.valid(saved)"), false)
   process.lua_func(function()

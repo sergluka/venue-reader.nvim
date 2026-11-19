@@ -1,0 +1,138 @@
+name: Plugin checks
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      python: ${{ steps.matrix.outputs.python }}
+      stable-digest: ${{ steps.matrix.outputs.stable-digest }}
+      server-commit: ${{ steps.matrix.outputs.server-commit }}
+      server-version: ${{ steps.matrix.outputs.server-version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: matrix
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/ci/matrix.py
+
+  source:
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: sergluka/venue-reader
+          ref: ${{ needs.plan.outputs.server-commit }}
+          persist-credentials: false
+      - name: Verify revision and build locked server
+        env:
+          EXPECTED_COMMIT: ${{ needs.plan.outputs.server-commit }}
+          EXPECTED_VERSION: ${{ needs.plan.outputs.server-version }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_COMMIT"
+          cargo build --locked --bin venue-reader
+          test "$(target/debug/venue-reader --version)" = "venue-reader $EXPECTED_VERSION"
+          tar -C target/debug -czf server.tar.gz venue-reader
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: source-server
+          path: server.tar.gz
+          if-no-files-found: error
+          retention-days: 3
+
+  integration:
+    name: Test ${{ matrix.id }}
+    needs: [plan, source]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      NVIM_VERSION: ${{ matrix.version }}
+      NVIM_SHA256: ${{ needs.plan.outputs.stable-digest }}
+      VENUE_READER_TEST_OUTPUT: ${{ github.workspace }}/evidence/suites
+      VENUE_READER_ACCEPTANCE_OUTPUT: ${{ github.workspace }}/evidence/acceptance
+      CELL: ${{ matrix.id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ needs.plan.outputs.python }}
+      - name: Install verified native tools
+        run: python .github/ci/setup.py
+      - name: Prepare verified release and test fixtures
+        run: nvim --headless -u NONE -i NONE -l scripts/prepare.lua
+      - if: matrix.mode == 'source'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: source-server
+          path: source
+      - if: matrix.mode == 'source'
+        shell: bash
+        run: |
+          tar -C source -xzf source/server.tar.gz
+          echo "VENUE_READER_TEST_SERVER=$PWD/source/venue-reader" >> "$GITHUB_ENV"
+      - name: Run all suites
+        run: nvim --headless -u NONE -i NONE -l scripts/test.lua
+      - name: Test fresh managed installation
+        if: ${{ !cancelled() && matrix.mode == 'release' }}
+        run: nvim --headless -u NONE -i NONE -l scripts/ci-install.lua ${{ matrix.target }}
+      - name: Record completed cell
+        shell: bash
+        run: |
+          test -s evidence/suites/suites.json
+          echo "$CELL" > evidence/completed
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: ${{ !cancelled() }}
+        with:
+          name: evidence-${{ matrix.id }}
+          path: evidence/
+          if-no-files-found: error
+          retention-days: 7
+
+  extras:
+    uses: ./.github/workflows/extras.yml
+
+  ci:
+    name: CI
+    needs: [plan, source, integration, extras]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require successful jobs
+        env:
+          JOBS: ${{ toJSON(needs) }}
+        run: jq -e 'all(.[]; .result == "success")' <<< "$JOBS"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: evidence-*
+          path: reports
+      - name: Require results for every expected matrix cell
+        env:
+          MATRIX: ${{ needs.plan.outputs.matrix }}
+        run: |
+          while IFS= read -r cell; do
+            test "$(cat "reports/evidence-$cell/completed")" = "$cell"
+            test -s "reports/evidence-$cell/suites/suites.json"
+          done < <(jq -r '.include[].id' <<< "$MATRIX")

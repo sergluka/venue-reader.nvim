@@ -58,7 +58,7 @@ function Symbols.fixture(options)
   local client = Lsp.start({
     name = "symbol-test",
     cmd = {
-      "python3",
+      vim.fn.has("win32") == 1 and "python" or "python3",
       assert(vim.env.VENUE_READER_TEST_ROOT) .. "/tests/support/symbol_server.py",
     },
     root_dir = vim.uv.cwd(),

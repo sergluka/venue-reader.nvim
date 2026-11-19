@@ -21,16 +21,9 @@ local function run(command, options)
 end
 
 local function release()
-  local system = vim.uv.os_uname()
-  local architecture = ({ arm64 = "aarch64", AMD64 = "x86_64" })[system.machine] or system.machine
-  local suffix = ({
-    Linux = "unknown-linux-gnu",
-    Darwin = "apple-darwin",
-    Windows_NT = "pc-windows-msvc",
-  })[system.sysname]
-  local target = architecture .. "-" .. (suffix or "unsupported")
+  local target, system = manifest.server.platform()
   local artifact = assert(manifest.server.artifacts[target], "No pinned artifact; use SERVER=/path")
-  local windows = suffix == "pc-windows-msvc"
+  local windows = system == "Windows_NT"
   return artifact,
     root .. "/.test-deps/" .. M.version .. "/" .. target,
     windows and "venue-reader.exe" or "venue-reader",
@@ -100,6 +93,10 @@ function M.prepare_tests()
   end
   if vim.fn.filereadable(parser_record) == 0 then
     local compiler = vim.trim(run({ "tree-sitter", "--version" }))
+    assert(
+      compiler:match("^tree%-sitter (%d+%.%d+%.%d+)") == manifest.tools.tree_sitter,
+      "Unexpected tree-sitter CLI version: " .. compiler
+    )
     vim.fn.mkdir(vim.fs.dirname(parser_file), "p")
     run({ "tree-sitter", "build", "-o", parser_file }, {
       cwd = root .. "/.test-deps/tree-sitter-fix",
@@ -124,8 +121,8 @@ function M.verify()
   local archive = directory .. "/" .. artifact.archive
   assert(vim.fn.filereadable(archive) == 1, "Pinned server is missing; run make prepare")
   checksum(archive, artifact)
-  local original = prefix == "" and run({ "unzip", "-p", archive, executable })
-    or run({ "tar", "-xOf", archive, prefix .. executable })
+  local extractor = prefix == "" and "tar.exe" or "tar"
+  local original = run({ extractor, "-xOf", archive, prefix .. executable })
   local binary = directory .. "/" .. executable
   assert(read(binary) == original, "Prepared binary differs from verified archive: " .. binary)
   assert(
@@ -166,7 +163,7 @@ function M.prepare(source)
     checksum(archive, artifact)
     -- Only pinned, verified release bytes reach the standard extractor.
     if prefix == "" then
-      run({ "unzip", "-q", archive, "-d", staging })
+      run({ "tar.exe", "-xf", archive, "-C", staging })
     else
       run({ "tar", "-xf", archive, "--strip-components=1", "-C", staging })
     end

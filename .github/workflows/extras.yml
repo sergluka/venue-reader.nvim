@@ -1,0 +1,65 @@
+name: Plugin checks
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  docs:
+    uses: ./.github/workflows/docs.yml
+
+  lint:
+    name: Lint and launcher
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: python .github/ci/setup.py
+      - run: bash .github/extra/lint-tools.sh
+      - run: make lint
+      - run: ruff check tests .github
+      - run: shellcheck .github/extra/*.sh
+      - run: actionlint
+      - run: make test-dev
+
+  integration:
+    name: ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [smoke-grammar, stress]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: python .github/ci/setup.py
+      - if: matrix.target == 'smoke-grammar'
+        name: Install the grammar at startup and after loading
+        run: |
+          make prepare-tests
+          lazy="$RUNNER_TEMP/lazy.nvim"
+          git init --quiet "$lazy"
+          git -C "$lazy" fetch --depth=1 "$(jq -er .lazy.repository tests/dependencies.json)" "$(jq -er .lazy.commit tests/dependencies.json)"
+          git -C "$lazy" checkout --quiet --detach FETCH_HEAD
+          make smoke-grammar LAZY="$lazy"
+      - if: matrix.target == 'stress'
+        name: Exercise 10k and 100k line FIX logs
+        run: |
+          make prepare
+          make stress
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: ${{ matrix.target }}-evidence
+          include-hidden-files: true
+          path: |
+            .test-deps/stress/stress-*.json
+            .test-deps/stress/isolated-*/nvim.log
+            .test-deps/grammar-smoke.json
+            .test-deps/grammar-smoke-*/*/nvim.log

@@ -68,8 +68,8 @@ the [pinned server](lua/venue-reader/release.json) asynchronously, checking SHA-
 An invalid explicit command reports an error. Compatible installations are reused
 without automatic upgrades or PATH changes.
 
-Linux automatic artifacts require x86_64/glibc >=2.35. macOS and Windows artifacts
-are listed in the manifest, but native validation there remains outstanding.
+The manifest includes Linux x86_64 (glibc >=2.35), macOS Intel and Apple Silicon,
+and Windows x86_64 archives.
 Installation tools and manual/offline setup are described in
 [Installation](https://github.com/sergluka/venue-reader.nvim/wiki/Installation)
 and `:help venue-reader-setup`.
