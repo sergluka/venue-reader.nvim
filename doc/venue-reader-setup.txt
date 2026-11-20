@@ -68,17 +68,28 @@ after/lsp/venue_reader.lua file to venue-reader.lua in the same directory.
 
 Defaults: >lua
     require("venue-reader").setup({
-      server = { auto_install = true },
       summary = { mode = "front", semantic_highlighting = true },
       commands = { timeout_ms = 5000 },
       symbols = { enabled = true, timeout_ms = 30000 },
       treesitter = { enabled = true, auto_install = true },
     })
 <
-server.auto_install ~
-Allow asynchronous verified server installation when no compatible binary is
-available. See |venue-reader-server|. An explicit retry is available through
-:VenueReader install server.
+server.update_version ~
+Without an explicit command, omitted or nil selects "latest". The plugin
+automatically installs and follows stable releases in the supported major.
+Set this option to Lua false to disable automatic downloads. An exact version
+such as "0.4.0" pins that release.
+
+With server.cmd or native LSP cmd, omitted, nil and false use the supplied
+command. Explicit "latest" or an exact pin with either command raises a
+setup error.
+Use stable versions within the supported major. Version strings take the form
+MAJOR.MINOR.PATCH with decimal components and no leading zeros, tag prefix or
+suffix. The string "false" and boolean true are
+invalid. The plugin ignores the old server.auto_install setting and warns once.
+To keep automatic downloads disabled after migration, set update_version=false.
+For a one-time managed installation, use :VenueReader install server [version].
+See |venue-reader-server|.
 
 server.cmd ~
 Optional argv list without shell parsing. The executable must support --version.
@@ -87,7 +98,6 @@ For an existing binary or offline use, with optional syntax disabled:
     require("venue-reader").setup({
       server = {
         cmd = { "/absolute/path/to/venue-reader", "--stdio" },
-        auto_install = false,
       },
       treesitter = { enabled = false },
     })
@@ -180,9 +190,9 @@ Register native cmd, root_dir, callbacks and handlers before setup:
     require("venue-reader").setup()
 <
 Native cmd may be an argv list or transport function. It takes precedence over
-server options and bypasses discovery/installation. Its server must report a
-compatible version at initialize; missing, malformed or incompatible versions
-stop that client. Native commands are not probed with --version.
+server.cmd and bypasses automatic discovery and installation. At initialize
+its server must report a compatible version or the client stops. Native
+commands are not probed with --version.
 
 The adapter preserves capabilities, unrelated handlers and on_attach. It runs
 user before_init before preparing settings, and user on_init before reconciling
@@ -204,15 +214,43 @@ version. It does not invent an executable path for a function transport.
 ==============================================================================
 Server discovery                                      *venue-reader-server*
 
-Discovery reuses a compatible explicit command, PATH executable or managed
-installation, in that order. Compatible stable patch releases in the same
-major/minor series as the pinned release are accepted. An invalid explicit
-command fails rather than selecting another executable.
+Explicit native cmd and server.cmd are user-owned. They must report a stable
+version in the supported major. An incompatible command reports an error.
+Automatic acquisition only writes under
+stdpath("data")/venue-reader/<version>/<target>/.
 
-If no binary is found and auto_install is true, the pinned release installs
-asynchronously under stdpath("data")/venue-reader/. The adapter verifies SHA-256
-before extraction. Compatible installations are reused without automatic
-upgrades, PATH changes or replacement of external installations.
+With automatic acquisition disabled, discovery checks PATH first, then installed
+managed releases from newest to oldest. An exact pin selects a matching binary
+or installs that release. With "latest", discovery checks for the highest stable
+release of the supported major and can reuse an equally new or newer compatible
+binary. Release discovery uses curl over HTTPS. The session caches the release
+once its platform archive is listed. A missing archive is checked again on the
+next lookup. If automatic "latest" fails during lookup, download,
+verification or installation, discovery can use a compatible installed server.
+Check :messages for the result. An automatic first installation or upgrade
+prints the same confirmation as a manual installation:
+    venue-reader: Installed server <version> at <path>
+If an automatic update fails and a compatible server is available, a warning
+names the selected version and explains why the update failed. If none is
+available, an error reports the failure and the server does not start.
+:VenueReader status shows the reason and the selected executable. A failed
+archive never becomes active. With an exact pin or a manual installation,
+failure is reported without substituting another release.
+
+The installer verifies the archive SHA-256 before extraction. The bundled
+release uses its manifest digest. Other versions use the asset digest from the
+project's GitHub release API over HTTPS.
+
+:VenueReader install server [version] installs into the managed directory,
+independently of PATH, configured commands and pins. Omit the argument or pass
+latest to request a fresh release check. Pass an exact version for a specific
+release. The command rejects false. Running clients keep their current version;
+:VenueReader restart applies normal discovery and the configured update policy.
+Older managed releases are retained. To roll back, pin a retained version in
+your config, reapply setup() with the new options and run :VenueReader restart.
+Reopening Neovim also applies the saved configuration. If status reports a
+damaged managed binary, move its platform directory aside and run
+:VenueReader install server <version> to reinstall it.
 
 Automatic installation tools ~
 

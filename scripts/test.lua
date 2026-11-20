@@ -13,6 +13,7 @@ local success, result = pcall(function()
     "lifecycle",
     "native_configuration",
     "installation",
+    "releases",
     "summaries",
     "symbols",
     "highlights",

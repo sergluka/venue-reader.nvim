@@ -20,7 +20,7 @@ local function child()
     vim.opt.runtimepath:prepend(directory)
     _G.setup = function()
       require("venue-reader").setup({
-        server = { auto_install = false },
+        server = { update_version = false },
         summary = { mode = "off" },
       })
     end

@@ -528,7 +528,7 @@ tests["public Plug textobject works as a native operator motion"] = function()
   local process = child({ parser = true, textobjects = true })
   process.lua_func(function()
     require("venue-reader").setup({
-      server = { auto_install = false },
+      server = { update_version = false },
       summary = { mode = "off" },
     })
     vim.keymap.set("o", "if", "<Plug>(VenueReaderField)")

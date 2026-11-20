@@ -156,7 +156,7 @@ Use a compatible local server for current-source development:
 <
 The runner labels overrides separately; they are not release-artifact evidence.
 Running without SERVER requires a prepared release compatible with the plugin's
-supported series. An older incompatible pin cannot verify current-source behavior.
+supported major. An older incompatible pin cannot verify current-source behavior.
 make test NVIM=/path/to/nvim selects another Neovim executable. Before release
 tests, the prepared archive and extracted binary are rechecked.
 
@@ -182,7 +182,10 @@ It does not load personal configuration or modify personal parsers.
 ==============================================================================
 Acceptance                                             *venue-reader-acceptance*
 
-The release matrix exercises installation and LSP attachment on native runners.
+Each release runner opens a FIX file in four clean profiles. Default setup and
+explicit "latest" read a fixture release list and install the selected real
+archive. An exact pin installs the same verified release without the lookup.
+Explicit false reports the missing server without downloading one.
 Linux also runs the full suite against a source build of the pinned server.
 
 Acceptance commands and supported targets:

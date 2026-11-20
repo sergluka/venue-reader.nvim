@@ -9,7 +9,8 @@ Wiki: https://github.com/sergluka/venue-reader.nvim/wiki/Commands
 :VenueReader stop               Native :lsp stop venue-reader.
 :VenueReader restart            Native restart/enable of configured transport.
 :VenueReader status             Show session/server/annotation/grammar state.
-:VenueReader install server     Explicit server discovery/installation retry.
+:VenueReader install server [version]
+                                Install a managed release. Default: latest.
 :VenueReader install grammar    Explicit optional parser acquisition retry.
 :VenueReader summary {mode}     Select front, above, hidden, codelens or off.
 :VenueReader yank [register]    Decode the cursor field to a text register.
@@ -39,8 +40,7 @@ The configured native transport or server discovery supplies the executable. Una
 ==============================================================================
 Server commands                                  *venue-reader-server-commands*
 
-The pinned release supplies structured fix.decode results and
-fix.listDictionaries. Automatic installation supplies a supporting release.
+Server commands use structured fix.decode results and fix.listDictionaries.
 Missing commands or unsupported results are errors; the adapter does not retry
 through a different interface.
 
@@ -81,7 +81,10 @@ Use require("venue-reader") for the public module:
 setup(opts)                    Configure and enable the adapter.
 start(), stop(), restart()     Lifecycle counterparts of the commands above.
 status([bufnr])                Return session/acquisition/annotations/treesitter.
-install([target])              target is "server" (default) or "grammar".
+install("server"[, version])   Install "latest" or an exact stable version in
+                               the supported major. install() defaults to the
+                               latest compatible server.
+install("grammar")             Install the optional parser.
 summary(mode)                  Select a summary mode.
 current_summary(opts)          Cached summary; |venue-reader-current-summary|.
 yank([opts])                   Decode cursor, line or live Visual selection.

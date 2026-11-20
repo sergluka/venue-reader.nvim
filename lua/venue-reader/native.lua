@@ -7,7 +7,6 @@ local Summaries = require("venue-reader.summaries")
 local Release = require("venue-reader.release")
 
 local owner = tostring(M)
-local original
 local active
 local summary
 
@@ -87,12 +86,12 @@ function M.resolve(buffer, command, valid, callback)
     if context.native_cmd then
       callback(nil, directory)
     else
-      Server.resolve(context.server, function(err, argv, version)
+      Server.resolve(context.server, function(err, argv, _, source)
         if not current() then
           return
         end
         if not err then
-          context.launch = { argv = argv, version = version }
+          context.launch = { argv = argv, source = source }
         end
         callback(err, directory)
       end)
@@ -116,37 +115,67 @@ function M.prepare(callback)
     callback()
     return
   end
-  Server.resolve(context.server, function(err, argv, version)
+  Server.resolve(context.server, function(err, argv, _, source)
     if context ~= active then
       return
     end
     if not err then
-      context.launch = { argv = argv, version = version }
+      context.launch = { argv = argv, source = source }
     end
     callback(err)
   end)
 end
 
+function M.server_policy()
+  local server = active and active.server or {}
+  local native = active and active.native_cmd
+  if not active then
+    native = M.user_config().cmd
+  end
+  return {
+    source = native and "native_cmd" or server.cmd and "server.cmd" or nil,
+    update_version = Server.update_policy(server, native),
+  }
+end
+
 function M.acquisition()
-  return active and active.native_cmd and { state = "external" } or Server.status()
+  if active and active.native_cmd then
+    return {
+      state = "external",
+      source = "native_cmd",
+      argv = type(active.native_cmd) == "table" and vim.deepcopy(active.native_cmd) or nil,
+      update_version = active.server.update_version,
+      supported_major = Release.major,
+      error = active.launch_error,
+    }
+  end
+  local status = Server.status()
+  if active and active.launch_error and not status.error then
+    status.state = "failed"
+    status.error = active.launch_error
+  end
+  return status
+end
+
+function M.user_config(config)
+  config = config or vim.lsp.config["venue-reader"] or {}
+  if config.venue_reader_owner == owner then
+    assert(M.check(config), "Register structural LSP overrides before venue-reader.setup()")
+  end
+  -- The registered cmd wraps the user's transport, including after a module reload.
+  return config.venue_reader_original or config
 end
 
 function M.setup(options, eligible, default_root, lifetime)
   local config = vim.lsp.config["venue-reader"] or {}
-  if config.venue_reader_owner == owner then
-    assert(M.check(config), "Register structural LSP overrides before venue-reader.setup()")
-  else
-    -- A reloaded module finds the previous instance's hooks; reuse that user snapshot.
-    original = vim.deepcopy(config.venue_reader_original or config)
-  end
+  local user = M.user_config(config)
   for method, handler in pairs({
     ["workspace/configuration"] = Commands.configuration,
     ["textDocument/inlayHint"] = Summaries.handler,
   }) do
-    local custom = (original.handlers or {})[method]
+    local custom = (user.handlers or {})[method]
     assert(custom == nil or custom == handler, method .. " is required by venue-reader")
   end
-  local user = original
   summary = vim.deepcopy(options.summary)
   local context = {
     server = vim.deepcopy(options.server),
@@ -155,6 +184,7 @@ function M.setup(options, eligible, default_root, lifetime)
     eligible = eligible,
     default_root = default_root,
     lifetime = lifetime,
+    generation = active and active.generation + 1 or 1,
   }
   if
     active
@@ -165,14 +195,14 @@ function M.setup(options, eligible, default_root, lifetime)
     context = active
   end
   active = context
-  local registered = vim.tbl_deep_extend("keep", vim.deepcopy(original), {
+  local registered = vim.tbl_deep_extend("keep", vim.deepcopy(user), {
     filetypes = { "fix" },
     exit_timeout = 1000,
     capabilities = Capabilities,
   })
   registered.settings = config.settings or {}
   registered.venue_reader_owner = owner
-  registered.venue_reader_original = vim.deepcopy(original)
+  registered.venue_reader_original = vim.deepcopy(user)
   registered.handlers = registered.handlers or {}
   registered.handlers["workspace/configuration"] = Commands.configuration
   registered.handlers["textDocument/inlayHint"] = Summaries.handler
@@ -198,19 +228,20 @@ function M.setup(options, eligible, default_root, lifetime)
     end
   end
   registered.on_init = function(client, result)
-    if context.native_cmd then
-      local version = client.server_info and client.server_info.version
-      local series = type(version) == "string" and version:match("^(%d+%.%d+)%.%d+$")
-      if series ~= Release.series then
-        client.config.venue_reader_failure = "Unsupported native server version: "
-          .. tostring(version)
-          .. "; expected "
-          .. Release.series
-          .. ".x"
-        notify(client.config.venue_reader_failure)
-        client:stop(true)
-        return
+    local version = client.server_info and client.server_info.version
+    local expected = client.config.venue_reader_expected_version
+    if not Release.compatible(version) or expected and expected ~= version then
+      local message = ("Unsupported server version: %s; expected %s"):format(
+        tostring(version),
+        expected or ("major " .. Release.major)
+      )
+      client.config.venue_reader_failure = message
+      if active and client.config.venue_reader_generation == active.generation then
+        active.launch_error = message
       end
+      notify(message)
+      client:stop(true)
+      return
     end
     callbacks(user.on_init, client, result)
     update(client)
@@ -225,7 +256,12 @@ function M.setup(options, eligible, default_root, lifetime)
       return context == active and vim.lsp.is_enabled("venue-reader")
     end, function(err, directory)
       if err then
-        notify(err)
+        -- Reporting a synchronous discovery error during FileType would abort :edit.
+        vim.schedule(function()
+          if context == active then
+            Server.message(err, vim.log.levels.ERROR)
+          end
+        end)
       else
         on_dir(directory)
       end
@@ -250,6 +286,13 @@ function M.setup(options, eligible, default_root, lifetime)
     end
     local command = launch_context.native_cmd
       or assert(launch_context.launch, "Runtime not ready; use :VenueReader restart").argv
+    local selector = launch_context.server.update_version
+    client_config.venue_reader_expected_version = Release.valid_version(selector) and selector
+      or nil
+    client_config.venue_reader_generation = launch_context.generation
+    launch_context.launch_error = nil
+    client_config.venue_reader_source = launch_context.native_cmd and "native_cmd"
+      or launch_context.launch.source
     client_config.venue_reader_started = true
     client_config.venue_reader_argv = type(command) == "table" and vim.deepcopy(command) or nil
     client_config.venue_reader_transport = type(command) == "function" and "function" or "stdio"

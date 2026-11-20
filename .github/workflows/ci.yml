@@ -94,9 +94,18 @@ jobs:
           echo "VENUE_READER_TEST_SERVER=$PWD/source/venue-reader" >> "$GITHUB_ENV"
       - name: Run all suites
         run: nvim --headless -u NONE -i NONE -l scripts/test.lua
-      - name: Test fresh managed installation
+      - name: Check automatic installation using default settings
         if: ${{ !cancelled() && matrix.mode == 'release' }}
-        run: nvim --headless -u NONE -i NONE -l scripts/ci-install.lua ${{ matrix.target }}
+        run: nvim --headless -u NONE -i NONE -l scripts/ci-install.lua ${{ matrix.target }} default
+      - name: Check startup with automatic updates disabled
+        if: ${{ !cancelled() && matrix.mode == 'release' }}
+        run: nvim --headless -u NONE -i NONE -l scripts/ci-install.lua ${{ matrix.target }} disabled
+      - name: Install and start the latest compatible release
+        if: ${{ !cancelled() && matrix.mode == 'release' }}
+        run: nvim --headless -u NONE -i NONE -l scripts/ci-install.lua ${{ matrix.target }} latest
+      - name: Install and start the exact managed release
+        if: ${{ !cancelled() && matrix.mode == 'release' }}
+        run: nvim --headless -u NONE -i NONE -l scripts/ci-install.lua ${{ matrix.target }} pinned
       - name: Record completed cell
         shell: bash
         run: |

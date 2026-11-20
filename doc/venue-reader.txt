@@ -98,10 +98,15 @@ buffer changes while the action menu is open, dismiss it and request actions
 again. This Neovim limitation was reproduced on 0.12.2 and 0.12.5.
 
 Server installation failed ~
-Check acquisition state, platform and required tools in |venue-reader-server|.
-Fix the cause and use :VenueReader install server. A compatible explicit binary
-with auto_install=false is suitable for offline use. An invalid explicit command
-is an error; it is not silently replaced with another executable.
+Check :VenueReader status for the selected path and failure reason. If an
+explicit server.cmd or native LSP cmd failed, fix its path or transport, check
+the server's version and restart. Installing a managed copy does not change
+the configured command.
+If the managed server is missing, run :VenueReader install server (add its
+exact version for a pin), then :VenueReader restart. Check required tools
+and platform support in |venue-reader-server|.
+For offline use, configure a compatible server.cmd, or select
+server.update_version=false to search PATH and managed installations.
 
 No summaries or field hints ~
 Check the mode, native inlay/CodeLens gates, effective channel/master switches

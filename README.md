@@ -73,11 +73,17 @@ require("venue-reader").setup({
 
 Update with `:lua vim.pack.update({ "venue-reader.nvim" })`.
 
-Without native `cmd`, server discovery starts with a named FIX buffer. It reuses
-a compatible `server.cmd`, PATH binary or managed installation, in that order. Otherwise it installs
-the [pinned server](lua/venue-reader/release.json) asynchronously, checking SHA-256.
-An invalid explicit command reports an error. Compatible installations are reused
-without automatic upgrades or PATH changes.
+Open a named FIX buffer to start the server. With no explicit server command,
+`setup()` follows the latest stable release within the supported major. It reuses
+a suitable installed binary or installs that release on first use.
+
+Set `server.update_version` to an exact version such as `"0.4.0"` to pin the
+server, or to Lua `false` to disable automatic downloads. With no explicit
+command, omitting this option or setting it to `nil` selects `"latest"`.
+If a `"latest"` update fails, the plugin can start an
+existing compatible server. `:VenueReader status` shows the reason. Exact pins
+and manual installations report failure if the requested release cannot be used.
+The old `server.auto_install` option is ignored with a warning.
 
 The manifest includes Linux x86_64 (glibc >=2.35), macOS Intel and Apple Silicon,
 and Windows x86_64 archives.
@@ -113,16 +119,20 @@ For an existing binary or offline use:
 require("venue-reader").setup({
   server = {
     cmd = { "/absolute/path/to/venue-reader", "--stdio" },
-    auto_install = false,
   },
   treesitter = { enabled = false },
 })
 ```
 
-`server.cmd` is an argv list; its executable must support `--version`. Native
-`cmd` takes precedence and bypasses acquisition. Configure native `cmd`, `root_dir`
-and callbacks before setup; the adapter preserves them and composes required
-hooks. Project/modeline settings keep precedence.
+An explicit `server.cmd` or native LSP `cmd` disables automatic server
+downloads. With either command, omit `server.update_version` or set it to Lua
+`false`. Combining a command with `"latest"` or an exact version raises a setup
+error. The manual install command remains available for managed releases.
+
+The executable in `server.cmd` must support `--version`. Native `cmd` takes
+precedence. Register native `cmd`, `root_dir` and callbacks before setup. The
+adapter preserves them and composes required hooks. Project/modeline settings
+keep precedence.
 
 Changes to `vim.lsp.config` settings apply to new clients; use
 `:VenueReader restart` or explicitly update an attached client's settings and
@@ -147,7 +157,7 @@ Use native LSP interfaces, for example `:lua vim.lsp.buf.hover()` and
 | `:VenueReader status` | Inspect server, annotations and optional grammar state |
 | `:checkhealth venue-reader` | Check requirements and current state |
 | `:VenueReader restart` | Restart the configured transport through native LSP |
-| `:VenueReader install server` | Retry server discovery/installation |
+| `:VenueReader install server [version]` | Install a managed release once (default `latest`) |
 | `:VenueReader install grammar` | Retry optional FIX parser acquisition |
 | `:VenueReader dictionary` | Choose a server dictionary with `vim.ui.select` |
 | `:VenueReader settings` | Preview effective settings, sources and warnings |

@@ -163,6 +163,7 @@ tests["rename closes old URI before opening new and preserves unrelated clients"
   vim.wait(30)
   equal(spawns, 1)
   transport:reply(1, {
+    serverInfo = { name = "venue-reader", version = require("venue-reader.release").version },
     capabilities = {
       textDocumentSync = { openClose = true, change = 1 },
       hoverProvider = true,

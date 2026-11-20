@@ -662,7 +662,7 @@ tests["public command opens the managed client stream"] = function()
     root_dir = vim.uv.cwd(),
   }
   Plugin.setup({
-    server = { auto_install = false },
+    server = { update_version = false },
     summary = { mode = "off" },
     treesitter = { enabled = false },
   })

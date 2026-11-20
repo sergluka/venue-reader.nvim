@@ -14,6 +14,7 @@ local Native = require("venue-reader.native")
 local Commands = require("venue-reader.commands")
 local Highlights = require("venue-reader.highlights")
 local Server = require("venue-reader.server")
+local Release = require("venue-reader.release")
 local Summaries = require("venue-reader.summaries")
 local Treesitter = require("venue-reader.treesitter")
 local Yank = require("venue-reader.yank")
@@ -24,7 +25,7 @@ local lifetimes = {}
 local command_clients = {}
 
 local defaults = {
-  server = { auto_install = true },
+  server = {},
   commands = { timeout_ms = 5000 },
   symbols = { enabled = true, timeout_ms = 30000 },
   treesitter = { enabled = true, auto_install = true },
@@ -162,7 +163,7 @@ end
 function M.restart()
   Native.prepare(function(err)
     if err then
-      notify(err, vim.log.levels.ERROR)
+      Server.message(err, vim.log.levels.ERROR)
     elseif #vim.lsp.get_clients({ name = "venue-reader" }) == 0 then
       M.start()
     else
@@ -178,33 +179,50 @@ function M.status(buffer)
     enabled = vim.lsp.is_enabled("venue-reader"),
     session = client and {
       root = client.config.root_dir,
+      source = client.config.venue_reader_source,
       argv = client.config.venue_reader_argv,
       transport = client.config.venue_reader_transport,
       version = client.server_info and client.server_info.version,
       buffers = vim.tbl_keys(client.attached_buffers),
     },
     symbols = { enabled = not options or options.symbols.enabled },
+    server_policy = Native.server_policy(),
     acquisition = Native.acquisition(),
     annotations = Summaries.status(buffer, client and client.id),
     treesitter = Treesitter.status(buffer),
   }
 end
 
-function M.install(target)
+function M.install(target, version)
   target = target or "server"
-  assert(target == "server" or target == "grammar", "Use install server|grammar")
+  assert(
+    target == "server" or target == "grammar",
+    "Use install server [version] or install grammar"
+  )
   if target == "grammar" then
+    assert(version == nil, "install grammar takes no version")
     return Treesitter.install()
   end
-  Server.resolve(vim.tbl_extend("force", options.server, { auto_install = true }), function(err)
+  if version == nil then
+    version = "latest"
+  end
+  assert(
+    version == "latest" or Release.valid_version(version),
+    "Expected latest or an exact server version"
+  )
+  Server.install(version, function(err)
     if err then
-      notify(err, vim.log.levels.ERROR)
+      Server.message(err, vim.log.levels.ERROR)
       return
     end
     for _, buffer in ipairs(vim.api.nvim_list_bufs()) do
-      activate(buffer)
+      if
+        #vim.lsp.get_clients({ bufnr = buffer, name = "venue-reader", _uninitialized = true }) == 0
+      then
+        activate(buffer)
+      end
     end
-  end, true)
+  end)
 end
 
 function M.current_summary(value)
@@ -281,7 +299,28 @@ function M.setup(value)
       and symbol_timeout % 1 == 0,
     "symbols.timeout_ms must be a finite non-negative integer"
   )
-  assert(type(candidate.server.auto_install) == "boolean", "server.auto_install must be boolean")
+  assert(type(candidate.server) == "table", "server must be a table")
+  if candidate.server.auto_install ~= nil then
+    vim.notify_once(
+      "venue-reader: server.auto_install was removed and is ignored; use server.update_version",
+      vim.log.levels.WARN
+    )
+    candidate.server.auto_install = nil
+  end
+  local version = candidate.server.update_version
+  assert(
+    version == nil or version == false or version == "latest" or Release.valid_version(version),
+    "server.update_version must be nil, false, latest, or an exact server version"
+  )
+  local policy, conflict = Server.update_policy(candidate.server, Native.user_config().cmd)
+  assert(conflict == nil, conflict)
+  candidate.server.update_version = policy
+  if Release.valid_version(version) then
+    assert(
+      Release.compatible(version),
+      "Unsupported server version: " .. version .. "; expected major " .. Release.major
+    )
+  end
   assert(type(candidate.treesitter) == "table", "treesitter must be a table")
   assert(
     type(candidate.treesitter.enabled) == "boolean"
@@ -401,8 +440,11 @@ function M.setup(value)
         assert(#arguments == 2, "Use summary front|above|hidden|codelens|off")
         M.summary(arguments[2])
       elseif action == "install" then
-        assert(#arguments == 2, "Use install server|grammar")
-        M.install(arguments[2])
+        assert(
+          #arguments == 2 or #arguments == 3,
+          "Use install server [version] or install grammar"
+        )
+        M.install(arguments[2], arguments[3])
       elseif action == "status" then
         assert(#arguments == 1, "Use status")
         notify(vim.inspect(M.status()))
@@ -420,7 +462,7 @@ function M.setup(value)
           "Use start, stop, restart, status, summary"
             .. (options.symbols.enabled and ", symbols" or "")
             .. ", yank, dictionary, settings, tag"
-            .. " or install server|grammar"
+            .. " or install server [version] or install grammar"
         )
       end
     end)
@@ -438,6 +480,7 @@ function M.setup(value)
         "restart",
         "status",
         "install server",
+        "install server latest",
         "install grammar",
         "summary front",
         "summary above",

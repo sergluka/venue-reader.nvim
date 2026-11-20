@@ -48,7 +48,7 @@ tests["missing framework fails without downloading"] = function()
   end)
 end
 
-tests["central manifest controls artifact URLs and required runtime series"] = function()
+tests["central manifest controls artifact URLs and supported server major"] = function()
   isolated(function(_, directory)
     local metadata_path = directory .. "/lua/venue-reader/release.json"
     local metadata = vim.json.decode(table.concat(vim.fn.readfile(metadata_path), "\n"))
@@ -89,7 +89,7 @@ tests["central manifest controls artifact URLs and required runtime series"] = f
     package.loaded["venue-reader.release"] = dofile(directory .. "/lua/venue-reader/release.lua")
     local root = assert(vim.env.VENUE_READER_TEST_ROOT)
     local server = dofile(root .. "/lua/venue-reader/server.lua")
-    for _, candidate in ipairs({ { "7.13.30", true }, { "7.14.0", false } }) do
+    for _, candidate in ipairs({ { "7.13.30", true }, { "7.14.0", true }, { "8.0.0", false } }) do
       local response
       server.resolve({ cmd = { candidate[1] } }, function(err)
         response = { accepted = err == nil }

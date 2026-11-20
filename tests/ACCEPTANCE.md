@@ -7,7 +7,7 @@ separately and does not establish release-artifact acceptance.
 
 Run without `SERVER` for release acceptance only when
 [lua/venue-reader/release.json](../lua/venue-reader/release.json) pins a release
-matching its supported series. An incompatible pin is an unavailable release
+matching its supported major. An incompatible pin is an unavailable release
 check; it does not justify skipping the required source-build scenarios.
 
 ## Local checks
@@ -85,9 +85,12 @@ and verifies that the corresponding field is selected.
 
 The integration matrix runs on Linux x86_64, macOS x86_64, macOS arm64 and
 Windows x86_64. Each release job prepares the archive for its host, runs the
-test suites and opens a named FIX buffer in a fresh profile. The managed server
-must match the prepared release binary and attach without a preinstalled FIX
-parser. Installer fixtures also exercise rejection and cleanup after failures.
+test suites and opens a named FIX buffer in four fresh profiles. Default setup
+and explicit `"latest"` both select the bundled version from a fixture release
+list, download the real archive and attach the verified binary. An exact pin
+installs that version without a release-list lookup. Explicit Lua `false`
+reports a missing server without starting a download. All four profiles run
+without a preinstalled FIX parser. Installer fixtures also exercise rejection and cleanup after failures.
 
 To reproduce a release job, use a native shell with Neovim and the pinned tools
 on PATH. Keep any external Venue Reader executable off PATH for the install check.

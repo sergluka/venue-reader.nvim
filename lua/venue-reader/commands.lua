@@ -1,5 +1,6 @@
 local M = {}
 
+local Server = require("venue-reader.server")
 local Operation = {}
 Operation.__index = Operation
 
@@ -123,7 +124,7 @@ local function attach(operation, err, client, callback, guard)
   end
   if err then
     operation:finish()
-    notify(error_text(err))
+    Server.message(error_text(err), vim.log.levels.ERROR)
     return
   end
   if not client then

@@ -44,7 +44,7 @@ local function fixture(config, options)
   }, config or {})
   vim.lsp.config("venue-reader", config)
   local setup_options = vim.tbl_deep_extend("force", {
-    server = { cmd = { "/must-not-discover/native-command", "--stdio" }, auto_install = false },
+    server = { cmd = { "/must-not-discover/native-command", "--stdio" }, update_version = false },
     treesitter = { enabled = false },
     summary = { mode = "off" },
   }, options or {})
@@ -333,6 +333,66 @@ local function child()
   return process
 end
 
+tests["opening a FIX file records the unavailable server in message history"] = function()
+  local result = child().lua_func(function()
+    rawset(vim, "notify", function() end)
+    local plugin = require("venue-reader")
+    local problem = "Could not fetch release metadata for this test"
+    require("venue-reader.release").resolve = function(_, _, callback)
+      callback(problem)
+    end
+    local exepath = vim.fn.exepath
+    rawset(vim.fn, "exepath", function(name)
+      return name == "venue-reader" and "" or exepath(name)
+    end)
+    plugin.setup({ treesitter = { enabled = false } })
+    vim.cmd("filetype on")
+    vim.cmd.edit({ args = { vim.fn.tempname() .. ".fix" } })
+    assert(
+      vim.wait(1000, function()
+        local history = vim.api.nvim_exec2("messages", { output = true }).output
+        return history:find("venue-reader: " .. problem, 1, true) ~= nil
+      end),
+      "Missing startup diagnostic in :messages"
+    )
+    return { plugin.status().acquisition.error, #vim.lsp.get_clients({ bufnr = 0 }) }
+  end)
+  equal(result, { "Could not fetch release metadata for this test", 0 })
+end
+
+tests["manual installation confirms a reused release once in message history"] = function()
+  local count = child().lua_func(function()
+    rawset(vim, "notify", function() end)
+    local manifest = require("venue-reader.release")
+    local target, system = manifest.platform()
+    local directory = vim.fn.tempname()
+    local stdpath = vim.fn.stdpath
+    rawset(vim.fn, "stdpath", function(kind)
+      return kind == "data" and directory or stdpath(kind)
+    end)
+    local binary = system == "Windows_NT" and "venue-reader.exe" or "venue-reader"
+    local path = vim.fs.joinpath(directory, "venue-reader", manifest.version, target, binary)
+    vim.fn.mkdir(vim.fs.dirname(path), "p")
+    vim.fn.writefile({}, path)
+    rawset(vim, "system", function(command, options, callback)
+      assert(vim.deep_equal(command, { path, "--version" }), vim.inspect(command))
+      options.stdout(nil, "venue-reader " .. manifest.version .. "\n")
+      callback({ code = 0 })
+      return { kill = function() end }
+    end)
+    local plugin = require("venue-reader")
+    plugin.setup({ server = { update_version = false }, treesitter = { enabled = false } })
+    vim.cmd("VenueReader install server " .. manifest.version)
+    assert(vim.wait(1000, function()
+      return plugin.status().acquisition.state == "ready"
+    end))
+    local notice = ("venue-reader: Installed server %s at %s"):format(manifest.version, path)
+    local history = vim.api.nvim_exec2("messages", { output = true }).output
+    return vim.fn.count(vim.split(history, "\n", { plain = true }), notice)
+  end)
+  equal(count, 1)
+end
+
 tests["status and health work before setup and after a rejected setup"] = function()
   local result = child().lua_func(function()
     local plugin = require("venue-reader")
@@ -344,6 +404,7 @@ tests["status and health work before setup and after a rejected setup"] = functi
       local health_ok, failure = pcall(require("venue-reader.health").check)
       return {
         status = status_ok and status.acquisition.state or tostring(status),
+        policy = status_ok and status.server_policy or nil,
         health = health_ok or tostring(failure),
       }
     end
@@ -352,8 +413,104 @@ tests["status and health work before setup and after a rejected setup"] = functi
     local rejected = not pcall(plugin.setup, { treesitter = { enabled = false } })
     return { before = before, rejected = rejected, after = probe() }
   end)
-  local idle = { status = "idle", health = true }
+  local idle = { status = "idle", policy = { update_version = "latest" }, health = true }
   equal(result, { before = idle, rejected = true, after = idle })
+end
+
+local function health_probe()
+  local process = child()
+  process.lua_func(function()
+    local reports
+    for _, level in ipairs({ "start", "ok", "info", "error", "warn" }) do
+      rawset(vim.health, level, function(message)
+        if not message:find("\n", 1, true) then
+          reports[#reports + 1] = { level, message }
+        end
+      end)
+    end
+    _G.health_report = function()
+      reports = {}
+      require("venue-reader.health").check()
+      return reports
+    end
+  end)
+  return process
+end
+
+for _, case in ipairs({
+  { name = "default", message = "latest compatible stable release" },
+  { name = "latest", selector = "latest", message = "latest compatible stable release" },
+  { name = "pin", selector = release.version, message = "pinned to " .. release.version },
+  { name = "disabled", selector = false, message = "installation and updates are disabled" },
+  { name = "explicit", command = "server.cmd", message = "supplied by server.cmd" },
+  { name = "native", command = "native_cmd", message = "supplied by native LSP cmd" },
+}) do
+  tests["health reports the configured " .. case.name .. " policy before discovery"] = function()
+    local process = health_probe()
+    local result = process.lua_func(function(config)
+      local cmd = { "/user/server", "--stdio" }
+      if config.command == "native_cmd" then
+        vim.lsp.config("venue-reader", { cmd = cmd })
+      end
+      require("venue-reader").setup({
+        server = {
+          cmd = config.command == "server.cmd" and cmd or nil,
+          update_version = config.selector,
+        },
+        treesitter = { enabled = false },
+      })
+      return {
+        policy = require("venue-reader").status().server_policy,
+        reports = _G.health_report(),
+      }
+    end, case)
+    local expected = case.name == "default" and "latest" or case.selector or false
+    equal(result.policy, { source = case.command, update_version = expected })
+    local messages = vim.tbl_map(function(entry)
+      return entry[2]
+    end, result.reports)
+    local text = table.concat(messages, "\n")
+    assert(text:find(case.message, 1, true), text)
+    equal(text:find("for a one-time install", 1, true) ~= nil, case.name == "disabled")
+  end
+end
+
+tests["health warns when an automatic update fails and a PATH server is usable"] = function()
+  local result = health_probe().lua_func(function()
+    local plugin = require("venue-reader")
+    local manifest = require("venue-reader.release")
+    local complete_lookup
+    manifest.resolve = function(_, _, callback)
+      complete_lookup = callback
+    end
+    local exepath = vim.fn.exepath
+    rawset(vim.fn, "exepath", function(name)
+      return name == "venue-reader" and "/existing/server" or exepath(name)
+    end)
+    rawset(vim, "system", function(command, options, callback)
+      assert(command[2] == "--version", vim.inspect(command))
+      options.stdout(nil, "venue-reader " .. manifest.version .. "\n")
+      callback({ code = 0 })
+      return { kill = function() end }
+    end)
+    plugin.setup({ treesitter = { enabled = false } })
+    plugin.restart()
+    local discovering = _G.health_report()
+    complete_lookup("release lookup offline", nil, true)
+    assert(vim.wait(1000, function()
+      return plugin.status().acquisition.state == "ready"
+    end))
+    return { discovering = discovering, ready = _G.health_report() }
+  end)
+  local function contains(entries, level, fragment)
+    return vim.iter(entries):any(function(entry)
+      return entry[1] == level and entry[2]:find(fragment, 1, true) ~= nil
+    end)
+  end
+  assert(contains(result.discovering, "info", "latest compatible stable release"))
+  assert(contains(result.discovering, "info", "discovering"))
+  assert(contains(result.ready, "warn", "release lookup offline"))
+  assert(contains(result.ready, "warn", release.version .. " (PATH)"))
 end
 
 tests["setup after a module reload keeps native overrides"] = function()
@@ -363,7 +520,7 @@ tests["setup after a module reload keeps native overrides"] = function()
       capabilities = { workspace = { workspaceEdit = { documentChanges = false } } },
     })
     local options = {
-      server = { auto_install = false },
+      server = { update_version = false },
       treesitter = { enabled = false },
       summary = { mode = "off" },
     }
@@ -402,6 +559,245 @@ tests["removed options and required handler replacements fail clearly"] = functi
   MiniTest.expect.error(function()
     Plugin.setup({ treesitter = { enabled = false } })
   end, "workspace/configuration")
+end
+
+tests["server policy rejects invalid configuration before enabling the client"] = function()
+  for _, selector in ipairs({ true, "false", "", "v0.4.0", "0.4", "^0.4.0", {}, 0 }) do
+    MiniTest.expect.error(function()
+      Plugin.setup({ server = { update_version = selector } })
+    end, "server.update_version")
+  end
+  MiniTest.expect.error(function()
+    Plugin.setup({ server = { update_version = "999.10.0" } })
+  end, "Unsupported server version")
+end
+
+for _, source in ipairs({ "server.cmd", "native cmd" }) do
+  tests[source .. " rejects update targets on initial and repeated setup"] = function()
+    local results = child().lua_func(function(command_source, pin)
+      local plugin = require("venue-reader")
+      local observed = { errors = {}, policies = {} }
+      local command = { "/external/venue-reader", "--stdio" }
+      if command_source == "native cmd" then
+        vim.lsp.config("venue-reader", { cmd = command })
+      end
+      local function configure(selector)
+        plugin.setup({
+          server = {
+            cmd = command_source == "server.cmd" and command or nil,
+            update_version = selector,
+          },
+          treesitter = { enabled = false },
+        })
+      end
+      local function reject(selector)
+        local ok, failure = pcall(configure, selector)
+        assert(not ok, "Conflicting selector accepted: " .. selector)
+        observed.errors[#observed.errors + 1] = tostring(failure)
+      end
+      reject("latest")
+      reject(pin)
+      observed.enabled_before = vim.lsp.is_enabled("venue-reader")
+      observed.command_before = vim.fn.exists(":VenueReader")
+      local server = require("venue-reader.server")
+      server.resolve = function(options)
+        observed.policies[#observed.policies + 1] = options.update_version
+      end
+      local function record_policy()
+        if command_source == "native cmd" then
+          observed.policies[#observed.policies + 1] = plugin.status().acquisition.update_version
+        else
+          plugin.restart()
+        end
+      end
+      configure(nil)
+      record_policy()
+      for _, target in ipairs({ "latest", pin }) do
+        reject(target)
+        record_policy()
+      end
+      configure(false)
+      record_policy()
+      return observed
+    end, source, release.version)
+    equal(results.enabled_before, false)
+    equal(results.command_before, 0)
+    equal(results.policies, { false, false, false, false })
+    for _, message in ipairs(results.errors) do
+      assert(message:find("update_version", 1, true), message)
+      assert(message:find("cmd", 1, true), message)
+    end
+  end
+end
+
+tests["plugin command wrapper preserves managed defaults and explicit update targets"] = function()
+  local observed = child().lua_func(function(version)
+    local plugin = require("venue-reader")
+    local result = { policies = {}, warnings = {} }
+    rawset(vim, "notify", function(message)
+      result.warnings[#result.warnings + 1] = message
+    end)
+    local server = require("venue-reader.server")
+    server.resolve = function(options)
+      result.policies[#result.policies + 1] = options.update_version
+    end
+    for _, config in ipairs({
+      { auto_install = false },
+      { auto_install = true },
+      { update_version = "latest" },
+      { update_version = version },
+      {},
+      { update_version = false },
+      {},
+      { cmd = { "/user/server" } },
+      {},
+    }) do
+      plugin.setup({ server = config, treesitter = { enabled = false } })
+      plugin.restart()
+    end
+    return result
+  end, release.version)
+  equal(
+    observed.policies,
+    { "latest", "latest", "latest", release.version, "latest", false, "latest", false, "latest" }
+  )
+  equal(#observed.warnings, 1)
+  assert(observed.warnings[1]:find("server.auto_install was removed", 1, true))
+end
+
+tests["explicit install defaults to latest and rejects false before acquisition"] = function()
+  local result = child().lua_func(function(pin)
+    local plugin = require("venue-reader")
+    local server = require("venue-reader.server")
+    local observed = { targets = {} }
+    rawset(vim, "notify", function(message)
+      observed.message = message
+    end)
+    server.install = function(version)
+      observed.targets[#observed.targets + 1] = version
+    end
+    server.resolve = function(options)
+      observed.pin = options.update_version
+    end
+    plugin.setup({ server = { update_version = pin }, treesitter = { enabled = false } })
+    vim.cmd("VenueReader install server")
+    vim.cmd("VenueReader install server latest")
+    vim.cmd("VenueReader install server " .. pin)
+    vim.cmd("VenueReader install server false")
+    plugin.restart()
+    return observed
+  end, release.version)
+  equal(result.targets, { "latest", "latest", release.version })
+  equal(result.pin, release.version)
+  assert(result.message:find("exact server version", 1, true))
+end
+
+tests["native initialization accepts new minors and rejects new majors on restart"] = function()
+  local context = fixture()
+  local buffer = Lsp.buffer()
+  local first = transport_for(context)
+  local version = release.major .. ".987.0"
+  first:reply(1, {
+    capabilities = {},
+    serverInfo = { name = "venue-reader", version = version },
+  })
+  Lsp.wait(function()
+    local session = Plugin.status(buffer).session
+    return session and session.version == version
+  end, "running compatible minor")
+  equal(Plugin.status(buffer).session.version, version)
+  Plugin.restart()
+  shutdown(first)
+  local replacement = transport_for(context, 2)
+  replacement:reply(1, {
+    capabilities = {},
+    serverInfo = { name = "venue-reader", version = (tonumber(release.major) + 1) .. ".0.0" },
+  })
+  Lsp.wait(function()
+    return replacement.closing
+  end, "new major rejected during restart")
+  assert(Plugin.status().acquisition.error:find("major " .. release.major, 1, true))
+end
+
+tests["restart rechecks the same executable and keeps the running client on failure"] = function()
+  local server_path = "version-changing-wrapper"
+  local disk_version = release.version
+  local original_system, original_rpc, original_notify = vim.system, vim.lsp.rpc.start, vim.notify
+  local exepath, resolve_release = vim.fn.exepath, release.resolve
+  local transports, messages = {}, {}
+  rawset(vim.fn, "exepath", function(command)
+    return command == "venue-reader" and server_path or exepath(command)
+  end)
+  release.resolve = function(_, _, callback)
+    callback("Pinned release unavailable")
+  end
+  rawset(vim, "system", function(command, options, callback)
+    if command[1] ~= server_path then
+      return original_system(command, options, callback)
+    end
+    equal(command, { server_path, "--version" })
+    options.stdout(nil, "venue-reader " .. disk_version .. "\n")
+    callback({ code = 0 })
+    return { kill = function() end }
+  end)
+  rawset(vim.lsp.rpc, "start", function(_, dispatchers)
+    local transport = Transport.new()
+    transports[#transports + 1] = transport
+    return transport.command(dispatchers)
+  end)
+  rawset(vim, "notify", function(message)
+    messages[#messages + 1] = tostring(message)
+  end)
+  MiniTest.finally(function()
+    vim.lsp.enable("venue-reader", false)
+    for _, transport in ipairs(transports) do
+      transport:exit(0, 0)
+    end
+    vim.wait(30)
+    rawset(vim, "notify", original_notify)
+    rawset(vim, "system", original_system)
+    rawset(vim.lsp.rpc, "start", original_rpc)
+    rawset(vim.fn, "exepath", exepath)
+    release.resolve = resolve_release
+  end)
+  local function pin(version)
+    Plugin.setup({
+      server = { update_version = version },
+      treesitter = { enabled = false },
+    })
+  end
+  pin(disk_version)
+  local buffer = Lsp.buffer()
+  local context = { transports = transports, messages = messages }
+  local function initialize(index)
+    local transport = transport_for(context, index)
+    transport:reply(1, {
+      capabilities = {},
+      serverInfo = { name = "venue-reader", version = disk_version },
+    })
+    Lsp.wait(function()
+      local session = Plugin.status(buffer).session
+      return session and session.version == disk_version and session.source == "PATH"
+    end, "reattachment to " .. disk_version)
+    return transport
+  end
+  local first = initialize(1)
+  disk_version = release.major .. ".987.0"
+  Plugin.restart()
+  Lsp.wait(function()
+    return Plugin.status(buffer).acquisition.error == "Pinned release unavailable"
+  end, "pinned version mismatch at unchanged path")
+  equal(Plugin.status(buffer).session.version, release.version)
+  equal(vim.tbl_contains(first.events, "shutdown"), false)
+  pin(disk_version)
+  Plugin.restart()
+  shutdown(first)
+  local second = initialize(2)
+  disk_version = release.version
+  pin(disk_version)
+  Plugin.restart()
+  shutdown(second)
+  initialize(3)
 end
 
 tests["native function transport reports its initialized version"] = function()
