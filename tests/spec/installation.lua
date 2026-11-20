@@ -314,7 +314,8 @@ tests["automatic latest keeps the working server after a checksum failure"] = fu
   end, "manual checksum failure")
   assert(manual_error:find("SHA-256 mismatch", 1, true))
   equal(downloads(), 3)
-  equal(vim.fn.glob(directory .. "/venue-reader/*/*/" .. binary), older_path)
+  local installed_paths = vim.fn.glob(directory .. "/venue-reader/*/*/" .. binary, false, true)
+  equal(vim.tbl_map(vim.fs.normalize, installed_paths), { older_path })
   equal(vim.fn.glob(directory .. "/venue-reader/*/*.tmp-*"), "")
 end
 
