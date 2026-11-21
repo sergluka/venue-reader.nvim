@@ -1,16 +1,15 @@
 # venue-reader.nvim
 
-A Neovim plugin for the [Venue Reader language server](https://github.com/sergluka/venue-reader).
-Requires Neovim 0.12+. The server also works with Neovim's native LSP client
-without this plugin.
+A Neovim plugin for the [Venue Reader language server](https://github.com/sergluka/venue-reader). Requires Neovim 0.12+.
+See the [editor compatibility matrix](https://github.com/sergluka/venue-reader/wiki/Editor-Compatibility) for available features by editor.
 
-The plugin reuses or installs the server, renders message summaries and adds
+The plugin reuses or installs the server, renders message summaries, and adds
 decoded yank and dictionary helpers. Hover, diagnostics, code actions, document
 symbols, field hints and semantic highlighting use Neovim's native LSP support.
 With optional Snacks, browse and search FIX messages, groups, and fields in a
 tree, even while the list is still loading.
 Optional Tree-sitter adds base highlighting, SOH conceal and structural selection
-and navigation. It is not required for LSP features.
+and navigation.
 
 ## Installation
 
@@ -73,17 +72,9 @@ require("venue-reader").setup({
 
 Update with `:lua vim.pack.update({ "venue-reader.nvim" })`.
 
-Open a named FIX buffer to start the server. With no explicit server command,
-`setup()` follows the latest stable release within the supported major. It reuses
-a suitable installed binary or installs that release on first use.
+### After installation
 
-Set `server.update_version` to an exact version such as `"0.4.0"` to pin the
-server, or to Lua `false` to disable automatic downloads. With no explicit
-command, omitting this option or setting it to `nil` selects `"latest"`.
-If a `"latest"` update fails, the plugin can start an
-existing compatible server. `:VenueReader status` shows the reason. Exact pins
-and manual installations report failure if the requested release cannot be used.
-The old `server.auto_install` option is ignored with a warning.
+Open a named FIX buffer to start the language server.
 
 The manifest includes Linux x86_64 (glibc >=2.35), macOS Intel and Apple Silicon,
 and Windows x86_64 archives.
@@ -93,13 +84,9 @@ and `:help venue-reader-setup`.
 
 ## Configuration
 
-When upgrading from `venue_reader`, use `venue-reader` in your Neovim LSP
-configuration, client filters and `:lsp` commands. If you have an
-`lsp/venue_reader.lua` or `after/lsp/venue_reader.lua` file, rename it to
-`venue-reader.lua` in the same directory.
-
-Defaults work with `setup()`. Server settings belong to native LSP configuration;
-summary placement belongs to the adapter:
+Call `setup()` without arguments to use the [plugin defaults](https://github.com/sergluka/venue-reader.nvim/wiki/Configuration#native-settings-and-adapter-options).
+Use `vim.lsp.config()` for server settings and `setup()` options for plugin
+behavior such as summary placement.
 
 ```lua
 vim.lsp.config("venue-reader", {
@@ -124,11 +111,6 @@ require("venue-reader").setup({
 })
 ```
 
-An explicit `server.cmd` or native LSP `cmd` disables automatic server
-downloads. With either command, omit `server.update_version` or set it to Lua
-`false`. Combining a command with `"latest"` or an exact version raises a setup
-error. The manual install command remains available for managed releases.
-
 The executable in `server.cmd` must support `--version`. Native `cmd` takes
 precedence. Register native `cmd`, `root_dir` and callbacks before setup. The
 adapter preserves them and composes required hooks. Project/modeline settings
@@ -142,7 +124,23 @@ including only the three summary keys it manages. See
 `:help venue-reader-setup` and the server's
 [settings reference](https://github.com/sergluka/venue-reader/wiki/Configuration-Reference).
 
-## First use
+### Server updates
+
+Without an explicit command, the plugin follows the latest stable server release
+within the supported major. It reuses a suitable installed binary or downloads
+the release when needed. Set `server.update_version` to an exact version such as
+`"0.4.0"` to pin a release, or to `false` to disable automatic downloads.
+Choose a stable version from the [server releases](https://github.com/sergluka/venue-reader/releases).
+
+With `server.cmd` or native LSP `cmd`, omit `server.update_version` or set it to
+`false`. To download a managed release manually, use `:VenueReader install server [version]`.
+
+If a latest-release update fails, the plugin can use a compatible installed
+binary. Check `:VenueReader status` for the reason. See
+[Server updates](https://github.com/sergluka/venue-reader.nvim/wiki/Configuration#server-updates)
+for the full option table.
+
+## Quick start
 
 Open a `*.fix` file, or use `:set ft=fix`. LSP attachment requires a normal buffer
 with a name; `:file /path/log.fix` assigns one without saving. Buffers share a
@@ -151,6 +149,19 @@ unless native `root_dir` supplies another rule.
 
 Use native LSP interfaces, for example `:lua vim.lsp.buf.hover()` and
 `:lua vim.lsp.buf.document_symbol()`. The plugin sets no user keybindings.
+For movement between FIX messages and fields, see the
+[suggested Tree-sitter keybindings](https://github.com/sergluka/venue-reader.nvim/wiki/Tree-sitter#suggested-navigation-mappings).
+
+Decode the field under the cursor with `:VenueReader yank`, or lines with
+`:10,20VenueReader yank a`, then paste normally.
+
+The `<Plug>(VenueReaderYank)` mapping uses Neovim's native operator support for
+motions, textobjects, counts and repeat. See the mapping example, register
+behavior and character/line/block selections in
+[Commands](https://github.com/sergluka/venue-reader.nvim/wiki/Commands)
+and `:help venue-reader-commands`.
+
+## Commands
 
 | Command | Purpose |
 | --- | --- |
@@ -164,17 +175,11 @@ Use native LSP interfaces, for example `:lua vim.lsp.buf.hover()` and
 | `:VenueReader tag 54 1` | Look up `Side(54) = 1` |
 | `:VenueReader symbols` | Search and select arriving document symbols with Snacks |
 
-The optional symbol picker requires `folke/snacks.nvim`. It shows `Loading symbols…`
-while receiving results, with a percentage when the server supplies one. Search applies to received
-symbols; the server's depth and item limits still apply. A truncation marker is
-filtered like any other entry. Closing or selecting cancels remaining work;
-editing the source clears old locations and restarts after a short pause.
-Native `vim.lsp.buf.document_symbol()` and `Snacks.picker.lsp_symbols()` remain
-available independently. `require("venue-reader").symbols()` returns a Snacks
-picker and defaults to `tree = true`, `keep_parents = true`, and all FIX symbol
-kinds (`filter = { fix = true }`).
-Use `filter = { fix = { "Object", "Field", "Array" } }` to select kinds.
-See `:help venue-reader-symbols` for options.
+## Symbol picker
+
+With `folke/snacks.nvim`, run `:VenueReader symbols` to browse the hierarchy of
+FIX messages, groups and fields. Search includes results as they arrive. See
+`:help venue-reader-symbols` for options.
 
 With Snacks installed and the picker enabled, this optional FIX-buffer mapping
 opens the symbol tree:
@@ -187,59 +192,45 @@ vim.keymap.set("n", "<localleader><localleader>", "<cmd>VenueReader symbols<cr>"
 })
 ```
 
-`<localleader>` uses `vim.g.maplocalleader` (for example, `,,` when it is `,`).
+## Summaries
 
-Decode the field under the cursor with `:VenueReader yank`, or lines with
-`:10,20VenueReader yank a`, then paste normally with `p`/`P`. For a decoded
-Normal/Visual operator, add:
+Choose a mode with `:VenueReader summary above`, or set `summary.mode`.
 
-```lua
-vim.keymap.set({ "n", "x" }, "<leader>y", "<Plug>(VenueReaderYank)")
-```
-
-Motions, textobjects, counts and repeat use Neovim's native operator support.
-Register behavior and character/line/block selections are documented in
-[Commands](https://github.com/sergluka/venue-reader.nvim/wiki/Commands)
-and `:help venue-reader-commands`.
-
-## Summaries and highlighting
-
-Choose a mode with `:VenueReader summary above`, or set `summary.mode`:
-
-| Mode | Display | Styling |
-| --- | --- | --- |
-| `front` (default) | Inline before the raw message | `VenueReaderSummary` |
-| `above` | Virtual line above the message | Same custom styling as front |
-| `hidden` | No annotation; summary available to UI components | Same semantic data |
-| `codelens` | Native CodeLens above the message | `LspCodeLens` |
-| `off` | No summary | Other LSP features remain available |
-
-The server supplies the same summary text/details through either channel.
-Front/above parts use the server semantic types over the `VenueReaderSummary`
-base group, which can supply a background. Set
-`summary.semantic_highlighting = false` for uniform base styling. Native field
-hints use `LspInlayHint`; semantic highlights can alternate backgrounds for
-repeating-group entries while preserving field foregrounds.
+| Mode | Display |
+| --- | --- |
+| `front` (default) | Inline before the raw message |
+| `above` | Virtual line above the message |
+| `hidden` | Hide inline annotations and keep the cached summary available through `current_summary()` |
+| `codelens` | Native CodeLens above the message |
+| `off` | No summary |
 
 Use the cached current message summary in another UI component:
 
 ```lua
 -- A winbar expression; the plugin does not own your winbar settings.
-vim.wo.winbar = '%!v:lua.require("venue-reader").current_summary({format="statusline"})'
+vim.wo.winbar = [[%!luaeval('require("venue-reader").current_summary({ format = "statusline" })')]]
 ```
 
 `current_summary()` returns plain text; `format = "chunks"` returns native virtual
 text chunks. The accessor also works alongside front/above modes and sends no
 requests on cursor movement. See `:help venue-reader-current-summary`.
 
+See [Summaries](https://github.com/sergluka/venue-reader.nvim/wiki/Summaries)
+or `:help venue-reader-modes`.
+
+## Highlights
+
+Front and above summaries use server semantic types over the
+`VenueReaderSummary` base group, which can supply a background. Set
+`summary.semantic_highlighting = false` for uniform base styling. Native CodeLens
+uses `LspCodeLens` and native field hints use `LspInlayHint`. Semantic highlights
+can alternate backgrounds for repeating-group entries while preserving field
+foregrounds.
+
 ![Repeating-group entries use alternating backgrounds at each nesting level.](docs/group-colours.svg)
 
-The plugin respects server processing limits. Oversized native inlay requests can
-omit summaries and field hints; CodeLens and semantic responses have separate
-limits. The plugin does not split requests, scan FIX text or recover omitted
-results. See [Summaries](https://github.com/sergluka/venue-reader.nvim/wiki/Summaries)
-and [Highlights](https://github.com/sergluka/venue-reader.nvim/wiki/Highlights),
-or `:help venue-reader-modes` and `:help venue-reader-styling`.
+See [Highlights](https://github.com/sergluka/venue-reader.nvim/wiki/Highlights)
+or `:help venue-reader-styling`.
 
 ## Optional syntax and documentation
 
