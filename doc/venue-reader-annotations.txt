@@ -114,6 +114,10 @@ winid defaults to the current window. Formats:
     chunks       Virtual-text-compatible {text, highlight_groups} pairs.
     statusline   Escaped statusline syntax with combined highlights and a reset.
 
+Set details = false to omit automatically appended details in any format.
+An explicit {details} in the template is retained. Older servers return the
+full summary.
+
 front/above/hidden populate the same row cache. hidden suppresses summary
 annotations while keeping ordinary field hints native. CodeLens/off return an
 empty string (or an empty table for chunks). A row with no accepted summary,
@@ -122,7 +126,7 @@ also returns empty output. Moving the cursor only reads the cache and sends no
 LSP request. No FIX text is parsed by the accessor.
 
 A winbar can consume statusline output: >lua
-    vim.wo.winbar = [[%!luaeval('require("venue-reader").current_summary({ format = "statusline" })')]]
+    vim.wo.winbar = [[%!luaeval('require("venue-reader").current_summary({ format = "statusline", details = false })')]]
 <
 The plugin does not set winbar/statusline. External UI components choose their
 own redraw policy. ColorScheme invalidates the derived statusline highlight

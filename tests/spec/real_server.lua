@@ -239,6 +239,62 @@ tests["local server supplies colored cached hidden summaries in one native respo
   equal(client.requests, requests)
 end
 
+tests["winbar can omit details that the in-buffer summary displays"] = function()
+  local plugin = require("venue-reader")
+  vim.lsp.config("venue-reader", {
+    settings = {
+      fix = { messageSummary = { template = "{34} {35.valueName} 100%", details = true } },
+    },
+  })
+  plugin.setup({
+    server = { cmd = { assert(vim.env.VENUE_READER_TEST_SERVER), "--stdio" } },
+    treesitter = { enabled = false },
+    summary = { mode = "front" },
+  })
+  MiniTest.finally(function()
+    vim.lsp.enable("venue-reader", false)
+    for _, client in ipairs(vim.lsp.get_clients({ name = "venue-reader" })) do
+      client:stop(true)
+    end
+  end)
+  local buffer = Lsp.buffer({ "8=FIX.4.2|35=8|34=2|150=2|" })
+  vim.api.nvim_set_current_buf(buffer)
+  local main = "2 ExecutionReport 100%"
+  local full = main .. " | FILL"
+  local namespace = vim.api.nvim_create_namespace("venue-reader.summary")
+  Lsp.wait(function()
+    vim.cmd("redraw!")
+    local marks = vim.api.nvim_buf_get_extmarks(buffer, namespace, 0, -1, { details = true })
+    return marks[1]
+      and table.concat(vim.tbl_map(function(chunk)
+          return chunk[1]
+        end, marks[1][4].virt_text))
+        == full .. " "
+  end, "in-buffer summary with details")
+  equal(plugin.current_summary(), full)
+  local text = plugin.current_summary({ details = false })
+  local chunks = plugin.current_summary({ details = false, format = "chunks" })
+  equal(chunks, vim.list_slice(plugin.current_summary({ format = "chunks" }), 1, #chunks))
+  local chunk_text = table.concat(vim.tbl_map(function(chunk)
+    return chunk[1]
+  end, chunks))
+  local winbar =
+    "%!v:lua.require'venue-reader'.current_summary({'format': 'statusline', 'details': v:false})"
+  local rendered = vim.api.nvim_eval_statusline(winbar, { use_winbar = true }).str
+  local client = assert(vim.lsp.get_clients({ name = "venue-reader", bufnr = buffer })[1])
+  local hints = Lsp.request(client, "textDocument/inlayHint", {
+    textDocument = { uri = vim.uri_from_bufnr(buffer) },
+    range = { start = { line = 0, character = 0 }, ["end"] = { line = 1, character = 0 } },
+  }, buffer)
+  local summary = assert(vim.iter(hints):find(function(hint)
+    return hint.data.kind == "summary"
+  end))
+  local expected = summary.data.templateParts and main or full
+  equal(text, expected)
+  equal(chunk_text, expected)
+  equal(rendered, expected)
+end
+
 tests["symbol picker selects the source field from real server ranges"] = function()
   local plugin = require("venue-reader")
   local Symbols = require("tests.support.symbols")
