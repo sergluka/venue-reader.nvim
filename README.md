@@ -225,8 +225,12 @@ Use the cached current message summary in another UI component:
 
 ```lua
 -- A winbar expression; the plugin does not own your winbar settings.
-vim.wo.winbar = '%!v:lua.require("venue-reader").current_summary({format="statusline"})'
+vim.wo.winbar = "%!v:lua.require'venue-reader'.current_summary({'format': 'statusline', 'details': v:false})"
 ```
+
+Set `details = false` to omit automatically appended details in any format.
+An explicit `{details}` in the template is retained. Older servers return the
+full summary.
 
 `current_summary()` returns plain text; `format = "chunks"` returns native virtual
 text chunks. The accessor also works alongside front/above modes and sends no

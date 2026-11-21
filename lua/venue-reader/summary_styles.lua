@@ -81,7 +81,7 @@ local function highlight(token, client, semantic)
   return groups
 end
 
-function M.chunks(hint, client, semantic, padding)
+function M.chunks(hint, client, semantic, padding, template_only)
   local chunks = {}
   if padding and hint.paddingLeft then
     chunks[#chunks + 1] = { " ", base_groups }
@@ -89,8 +89,16 @@ function M.chunks(hint, client, semantic, padding)
   if type(hint.label) == "string" then
     chunks[#chunks + 1] = { hint.label, base_groups }
   elseif type(hint.label) == "table" then
-    local tokens = type(hint.data) == "table" and hint.data.tokens
+    local data = type(hint.data) == "table" and hint.data or {}
+    local limit = template_only and data.templateParts
+    if type(limit) ~= "number" or limit < 0 or limit % 1 ~= 0 then
+      limit = #hint.label
+    end
+    local tokens = data.tokens
     for index, part in ipairs(hint.label) do
+      if index > limit then
+        break
+      end
       if type(part) == "table" and type(part.value) == "string" then
         local token = type(tokens) == "table" and tokens[index] or nil
         chunks[#chunks + 1] = { part.value, highlight(token, client, semantic) }

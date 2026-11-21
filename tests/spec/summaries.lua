@@ -481,6 +481,7 @@ tests["hidden caches row summaries without marks or cursor requests"] = function
   configuration(context)
   equal(#marks(context.buffer), 0)
   equal(Plugin.current_summary(), "Heartbeat λ details")
+  equal(Plugin.current_summary({ details = false }), "Heartbeat λ details")
   local requests = vim.deepcopy(context.transport.pending)
   vim.api.nvim_win_set_cursor(0, { 2, 0 })
   equal(Plugin.current_summary(), "")
@@ -523,13 +524,26 @@ tests["semantic parts retain base background and preserve null alignment"] = fun
   equal(vim.api.nvim_get_hl(0, { name = name, link = false }).fg, 0x123456)
 end
 
+tests["template-only summary is empty when the server supplies only details"] = function()
+  local context = fixture("hidden")
+  local result = hints()
+  result[1].data.templateParts = 0
+  reply(context, result)
+  configuration(context)
+  equal(Plugin.current_summary(), "Heartbeat λ details")
+  equal(Plugin.current_summary({ details = false }), "")
+  equal(Plugin.current_summary({ details = false, format = "statusline" }), "")
+  equal(Plugin.current_summary({ details = false, format = "chunks" }), {})
+end
+
 tests["metadata suppression preserves readable summary and reports source"] = function()
   local context = fixture()
   local result = hints()
-  result[1].data.tokens = { { "N", 0 }, { "B", 0 } }
+  result[1].data.templateParts = 1
   reply(context, result)
   configuration(context, { ["messageSummary.semanticTokens"] = false })
   equal(Plugin.current_summary(), "Heartbeat λ details")
+  equal(Plugin.current_summary({ details = false }), result[1].label[1].value)
   for _, chunk in ipairs(Plugin.current_summary({ format = "chunks" })) do
     equal(chunk[2], { "VenueReaderSummary" })
   end

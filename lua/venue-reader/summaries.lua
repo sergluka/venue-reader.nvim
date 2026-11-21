@@ -348,8 +348,16 @@ function M.current_summary(value)
   local row = vim.api.nvim_win_get_cursor(window)[1] - 1
   for client_id, state in pairs(doc.clients) do
     if state.rows and state.rows[row] and valid(state, buffer, client_id) then
-      local chunks =
-        Styles.chunks(state.rows[row], vim.lsp.get_client_by_id(client_id), styled(state))
+      local chunks = Styles.chunks(
+        state.rows[row],
+        vim.lsp.get_client_by_id(client_id),
+        styled(state),
+        false,
+        value.details == false
+      )
+      if #chunks == 0 then
+        return empty
+      end
       if format == "chunks" then
         return chunks
       end
