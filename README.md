@@ -11,7 +11,12 @@ tree, even while the list is still loading.
 Optional Tree-sitter adds base highlighting, SOH conceal and structural selection
 and navigation.
 
-<https://github.com/user-attachments/assets/0abff0c6-b02d-4b9d-b65b-abcfed46b0c6>
+<details>
+<summary>Watch the demo</summary>
+
+<https://github.com/user-attachments/assets/e408b073-8157-44a1-8d11-f0cf46a7412d>
+
+</details>
 
 ## Installation
 

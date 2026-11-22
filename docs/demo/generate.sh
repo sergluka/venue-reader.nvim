@@ -10,7 +10,7 @@ test -s "$scratch/recording.mp4"
 
 caption_filter="subtitles=demo.srt:force_style='FontName=DejaVu Sans,FontSize=16.578,PrimaryColour=&H00FFFFFF,Outline=0,Shadow=0,Alignment=6,MarginV=1'"
 ffmpeg -hide_banner -loglevel error -i "$scratch/recording.mp4" \
-  -vf "pad=iw:ih+48:0:48:color=0x222b42,$caption_filter" \
+  -vf "fps=50,pad=iw:ih+48:0:48:color=0x222b42,$caption_filter" \
   -c:v libx264 -crf 17 -pix_fmt yuv420p -movflags +faststart \
   "$scratch/venue-reader.mp4"
 

@@ -1,47 +1,43 @@
 1
-00:00:00,000 --> 00:00:03,020
-See the raw FIX file
-
-2
 00:00:03,020 --> 00:00:10,440
 Enable FIX mode with :set ft=fix.
 
-3
+2
 00:00:10,440 --> 00:00:19,300
 Find Side in the symbol picker and jump to the tag.
 
-4
+3
 00:00:19,300 --> 00:00:22,880
 Press K to open hover for Side(54).
 
-5
+4
 00:00:22,880 --> 00:00:28,980
 Follow the bid: move between fields with ]] and back with [[.
 
-6
+5
 00:00:28,980 --> 00:00:37,760
 Copy the decoded bid size with :VenueReader yank and paste it into a split.
 
-7
+6
 00:00:37,760 --> 00:00:42,700
 Change the bid size from 200 to 2000. Look for the integrity diagnostics.
 
-8
+7
 00:00:42,700 --> 00:00:50,440
 Apply the quick fix to repair BodyLength and CheckSum while keeping the new size.
 
-9
+8
 00:00:50,440 --> 00:00:55,320
 Hover tag 789 to see NextExpectedMsgSeqNum in FIX 4.4.
 
-10
+9
 00:00:55,320 --> 00:01:03,220
 Switch the session dictionary to FIX 4.3.
 
-11
+10
 00:01:03,220 --> 00:01:12,620
 Change the Logon to FIX 4.3. Tag 789 now requires FIX 4.4.
 
-12
+11
 00:01:12,620 --> 00:01:25,200
 Turn off summaries and the dictionary version warning for this file.
